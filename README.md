@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NoteSlack 🚀
 
-## Getting Started
+A real-time collaborative workspace with Slack-style chat and live document editing.
 
-First, run the development server:
+**Stack:** Next.js 15 · Clerk · Supabase · TipTap · Zustand · TypeScript
+
+---
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Environment variables
+
+Create `.env.local`:
+
+```env
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+CLERK_WEBHOOK_SECRET=whsec_...
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/workspace
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/workspace
+
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+```
+
+### 3. Supabase setup
+
+- Run the SQL schema from the project guide in Supabase SQL Editor
+- Enable Realtime for `messages` and `documents` tables
+
+### 4. Clerk setup
+
+- Create JWT Template named `supabase` (see project guide)
+- Add Clerk webhook pointing to `https://your-domain.com/api/webhooks/clerk`
+  - Events: `user.created`, `user.updated`
+
+### 5. Run dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+NoteSlack/
+├── app/                    # Next.js App Router pages
+│   ├── (auth)/             # Sign-in / Sign-up
+│   ├── (dashboard)/        # Protected workspace pages
+│   └── api/                # API routes
+├── components/
+│   ├── chat/               # ChatView with real-time messages
+│   ├── editor/             # DocumentView with TipTap
+│   ├── sidebar/            # Navigation, modals
+│   ├── workspace/          # WorkspaceHome
+│   └── ui/                 # Shared UI (Modal)
+├── hooks/                  # useRealtime, usePresence, useWorkspace
+├── lib/supabase/           # Supabase clients (browser + server)
+├── store/                  # Zustand workspace store
+└── types/                  # TypeScript interfaces
+```
 
-## Learn More
+## Key Features
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- ⚡ Real-time chat with typing indicators
+- 📝 Rich text editor (TipTap) with formatting toolbar
+- 👁️ Live presence cursors on documents
+- 🔐 Clerk auth synced to Supabase via webhooks + JWT
+- 🏠 Multiple workspaces with channels and documents
+- 💾 Auto-saving documents with visual save status

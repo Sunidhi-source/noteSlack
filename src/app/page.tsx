@@ -1,65 +1,176 @@
-import Image from "next/image";
+import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 
-export default function Home() {
+export default async function HomePage() {
+  const { userId } = await auth();
+  if (userId) redirect("/workspace");
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg-base)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "2rem",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* Radial glow background */}
+      <div
+        style={{
+          position: "absolute",
+          top: "20%",
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "600px",
+          height: "600px",
+          background:
+            "radial-gradient(circle, rgba(108,99,255,0.12) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{ position: "relative", textAlign: "center", maxWidth: "680px" }}
+      >
+        {/* Badge */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            background: "var(--accent-soft)",
+            border: "1px solid rgba(108,99,255,0.25)",
+            borderRadius: "99px",
+            padding: "4px 14px",
+            fontSize: "12px",
+            color: "var(--accent)",
+            fontWeight: 500,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+            marginBottom: "2rem",
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--accent)",
+              display: "inline-block",
+              animation: "pulse-glow 2s infinite",
+            }}
+          />
+          Real-time • Collaborative • Powerful
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        <h1
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: "clamp(3rem, 8vw, 5.5rem)",
+            fontWeight: 800,
+            lineHeight: 1.05,
+            letterSpacing: "-0.03em",
+            marginBottom: "1.5rem",
+          }}
+        >
+          Think <span style={{ color: "var(--accent)" }}>Together.</span>
+          <br />
+          Build Faster.
+        </h1>
+
+        <p
+          style={{
+            fontSize: "1.1rem",
+            color: "var(--text-secondary)",
+            lineHeight: 1.7,
+            maxWidth: "480px",
+            margin: "0 auto 2.5rem",
+          }}
+        >
+          NoteSlack blends Slack-style channels with live collaborative docs —
+          see your team&apos;s cursors move in real time.
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <Link
+            href="/sign-up"
+            style={{
+              background: "var(--accent)",
+              color: "#fff",
+              padding: "12px 28px",
+              borderRadius: "var(--radius-md)",
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: "15px",
+              textDecoration: "none",
+              transition: "background 0.15s, transform 0.15s",
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Get Started Free
+          </Link>
+          <Link
+            href="/sign-in"
+            style={{
+              background: "var(--bg-overlay)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border-accent)",
+              padding: "12px 28px",
+              borderRadius: "var(--radius-md)",
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: "15px",
+              textDecoration: "none",
+            }}
           >
-            Documentation
-          </a>
+            Sign In
+          </Link>
         </div>
-      </main>
-    </div>
+
+        {/* Feature pills */}
+        <div
+          style={{
+            display: "flex",
+            gap: "10px",
+            justifyContent: "center",
+            marginTop: "3rem",
+            flexWrap: "wrap",
+          }}
+        >
+          {[
+            "⚡ Real-time chat",
+            "📝 Collaborative docs",
+            "👁️ Live cursors",
+            "🔐 Secure auth",
+          ].map((f) => (
+            <span
+              key={f}
+              style={{
+                background: "var(--bg-overlay)",
+                border: "1px solid var(--border)",
+                borderRadius: "99px",
+                padding: "6px 14px",
+                fontSize: "13px",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {f}
+            </span>
+          ))}
+        </div>
+      </div>
+    </main>
   );
 }
