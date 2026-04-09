@@ -40,8 +40,8 @@ export interface Message {
   content: string;
   edited_at: string | null;
   created_at: string;
-  users?: Pick<User, "full_name" | "avatar_url">;
   parent_message_id?: string | null;
+  users?: Pick<User, "full_name" | "avatar_url">;
 }
 
 export interface Document {
@@ -68,6 +68,7 @@ export interface Notification {
   user_id: string;
   message: string;
   read: boolean;
+  link?: string | null;
   created_at: string;
 }
 
@@ -75,4 +76,12 @@ export interface TypingUser {
   user_id: string;
   name: string | null;
   channel_id: string;
+}
+
+export interface Reaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
 }
