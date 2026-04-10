@@ -31,6 +31,7 @@ export interface Channel {
   is_private: boolean;
   created_by: string | null;
   created_at: string;
+  unread_count?: number; // client-side computed
 }
 
 export interface Message {
@@ -42,6 +43,8 @@ export interface Message {
   created_at: string;
   parent_message_id?: string | null;
   users?: Pick<User, "full_name" | "avatar_url">;
+  // joined via channels relation in search
+  channels?: Pick<Channel, "name"> | null;
 }
 
 export interface Document {
@@ -69,6 +72,7 @@ export interface Notification {
   message: string;
   read: boolean;
   link?: string | null;
+  type: string;
   created_at: string;
 }
 
@@ -84,4 +88,30 @@ export interface Reaction {
   user_id: string;
   emoji: string;
   created_at: string;
+}
+
+export interface DmConversation {
+  id: string;
+  workspace_id: string;
+  participant_a: string;
+  participant_b: string;
+  updated_at: string;
+  participant_a_user?: Pick<User, "id" | "full_name" | "avatar_url">;
+  participant_b_user?: Pick<User, "id" | "full_name" | "avatar_url">;
+}
+
+export interface DmMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  read_at: string | null;
+  created_at: string;
+  users?: Pick<User, "full_name" | "avatar_url">;
+}
+
+export interface SearchResults {
+  messages: (Message & { channels?: Pick<Channel, "name"> | null })[];
+  documents: Pick<Document, "id" | "title" | "updated_at">[];
+  channels: Pick<Channel, "id" | "name" | "description">[];
 }

@@ -1,67 +1,72 @@
 import { Webhook } from "svix";
 import { headers } from "next/headers";
+import { WebhookEvent } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-interface ClerkUserEvent {
-  type: string;
-  data: {
-    id: string;
-    email_addresses: Array<{ email_address: string }>;
-    first_name: string | null;
-    last_name: string | null;
-    image_url: string | null;
-  };
-}
-
 export async function POST(req: Request) {
+  const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
+
+  if (!WEBHOOK_SECRET) {
+    console.error("CLERK_WEBHOOK_SECRET is not set");
+    return new NextResponse("Webhook secret not configured", { status: 500 });
+  }
+
   const headerPayload = await headers();
   const svix_id = headerPayload.get("svix-id");
   const svix_timestamp = headerPayload.get("svix-timestamp");
   const svix_signature = headerPayload.get("svix-signature");
 
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response("Missing svix headers", { status: 400 });
+    return new NextResponse("Missing svix headers", { status: 400 });
   }
 
-  const body = await req.text();
-  const wh = new Webhook(process.env.CLERK_WEBHOOK_SECRET!);
+  const payload = await req.json();
+  const body = JSON.stringify(payload);
 
-  let evt: ClerkUserEvent;
+  const wh = new Webhook(WEBHOOK_SECRET);
+  let evt: WebhookEvent;
+
   try {
     evt = wh.verify(body, {
       "svix-id": svix_id,
       "svix-timestamp": svix_timestamp,
       "svix-signature": svix_signature,
-    }) as ClerkUserEvent;
-  } catch {
-    return new Response("Invalid signature", { status: 400 });
+    }) as WebhookEvent;
+  } catch (err) {
+    console.error("Webhook verification failed:", err);
+    return new NextResponse("Invalid signature", { status: 400 });
   }
 
   const supabase = createServerSupabaseClient();
 
-  if (evt.type === "user.created") {
-    const { error } = await supabase.from("users").insert({
-      id: evt.data.id,
-      email: evt.data.email_addresses[0].email_address,
-      full_name:
-        `${evt.data.first_name ?? ""} ${evt.data.last_name ?? ""}`.trim(),
-      avatar_url: evt.data.image_url,
-    });
-    if (error) console.error("Supabase insert error:", error);
+  if (evt.type === "user.created" || evt.type === "user.updated") {
+    const { id, email_addresses, first_name, last_name, image_url } = evt.data;
+    const email = email_addresses?.[0]?.email_address ?? "";
+    const full_name = [first_name, last_name].filter(Boolean).join(" ") || null;
+
+    const { error } = await supabase.from("users").upsert(
+      {
+        id,
+        email,
+        full_name,
+        avatar_url: image_url ?? null,
+      },
+      { onConflict: "id" },
+    );
+
+    if (error) {
+      console.error("Failed to upsert user:", error.message);
+      return new NextResponse(error.message, { status: 500 });
+    }
   }
 
-  if (evt.type === "user.updated") {
-    const { error } = await supabase
-      .from("users")
-      .update({
-        email: evt.data.email_addresses[0].email_address,
-        full_name:
-          `${evt.data.first_name ?? ""} ${evt.data.last_name ?? ""}`.trim(),
-        avatar_url: evt.data.image_url,
-      })
-      .eq("id", evt.data.id);
-    if (error) console.error("Supabase update error:", error);
+  if (evt.type === "user.deleted") {
+    const { id } = evt.data;
+    if (id) {
+      await supabase.from("users").delete().eq("id", id);
+    }
   }
 
-  return new Response("OK", { status: 200 });
+  return NextResponse.json({ received: true });
 }

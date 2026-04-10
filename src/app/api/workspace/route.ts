@@ -21,6 +21,11 @@ export async function POST(req: Request) {
   if (!userId) return new NextResponse("Unauthorized", { status: 401 });
 
   const body: { name: string; icon?: string } = await req.json();
+
+  if (!body.name?.trim()) {
+    return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  }
+
   const slug = body.name
     .toLowerCase()
     .replace(/\s+/g, "-")
@@ -28,11 +33,19 @@ export async function POST(req: Request) {
 
   const supabase = createServerSupabaseClient();
 
+  const { data: existing } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("slug", slug)
+    .single();
+
+  const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
+
   const { data: workspace, error } = await supabase
     .from("workspaces")
     .insert({
-      name: body.name,
-      slug,
+      name: body.name.trim(),
+      slug: finalSlug,
       icon: body.icon ?? "🏠",
       owner_id: userId,
     })
@@ -41,18 +54,23 @@ export async function POST(req: Request) {
 
   if (error) return new NextResponse(error.message, { status: 500 });
 
-  // Add creator as owner
   await supabase.from("workspace_members").insert({
     workspace_id: workspace.id,
     user_id: userId,
     role: "owner",
   });
 
-  // Create default #general channel
   await supabase.from("channels").insert({
     workspace_id: workspace.id,
     name: "general",
-    description: "General discussion",
+    description: "General discussion for the whole team",
+    created_by: userId,
+  });
+
+  await supabase.from("channels").insert({
+    workspace_id: workspace.id,
+    name: "announcements",
+    description: "Important updates for the team",
     created_by: userId,
   });
 
