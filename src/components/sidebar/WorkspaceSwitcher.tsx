@@ -16,7 +16,7 @@ export function WorkspaceSwitcher() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/workspaces")
+    fetch("/api/workspace")
       .then((r) => r.json())
       .then((data: { workspaces: Workspace }[]) => {
         const ws = data

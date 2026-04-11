@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import { Modal, inputStyle, btnPrimaryStyle } from "@/components/ui/Modal";
 import { useWorkspaceStore } from "@/store/workspace";
 import { Workspace } from "@/types";
-import { Loader2 } from "lucide-react";
 
-const ICONS = ["🏠", "🚀", "⚡", "🎨", "🔥", "💎", "🌊", "🌿", "🎯", "🛸"];
+const ICONS = ["🚀", "🏠", "⚡", "🎨", "🔥", "💎", "🌊", "🌿", "🎯", "🛸", "🧠", "🦄"];
 
 interface Props {
   onClose?: () => void;
@@ -26,37 +25,41 @@ export function CreateWorkspaceModal({ onClose }: Props) {
     setLoading(true);
     setError(null);
 
-    // ✅ FIX: was /api/workspace (singular) — route now exists at /api/workspaces
-    const res = await fetch("/api/workspaces", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), icon }),
-    });
+    try {
+      const res = await fetch("/api/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), icon }),
+      });
 
-    if (res.ok) {
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || "Failed to create workspace");
+      }
+
       const workspace: Workspace = await res.json();
       setCurrentWorkspace(workspace);
       router.push(`/workspace/${workspace.id}`);
       onClose?.();
-    } else {
-      const body = await res.text();
-      setError(body || "Something went wrong. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const content = (
     <>
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 16 }}>
         <label
           style={{
             fontSize: 12,
             color: "var(--text-muted)",
             display: "block",
-            marginBottom: 6,
+            marginBottom: 8,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
             fontWeight: 600,
-            letterSpacing: "0.04em",
           }}
         >
           Workspace Icon
@@ -67,20 +70,16 @@ export function CreateWorkspaceModal({ onClose }: Props) {
               key={ic}
               onClick={() => setIcon(ic)}
               style={{
-                width: 38,
-                height: 38,
-                fontSize: 18,
+                width: 40,
+                height: 40,
+                fontSize: 20,
                 borderRadius: 8,
                 border: "2px solid",
-                borderColor:
-                  icon === ic ? "var(--accent)" : "var(--border-accent)",
-                background:
-                  icon === ic ? "var(--accent-soft)" : "var(--bg-base)",
+                borderColor: icon === ic ? "var(--accent)" : "var(--border)",
+                background: icon === ic ? "var(--accent-soft)" : "var(--bg-surface)",
                 cursor: "pointer",
-                transition: "border-color 0.15s, background 0.15s",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                transition: "all 0.15s",
+                transform: icon === ic ? "scale(1.1)" : "scale(1)",
               }}
             >
               {ic}
@@ -96,15 +95,16 @@ export function CreateWorkspaceModal({ onClose }: Props) {
             color: "var(--text-muted)",
             display: "block",
             marginBottom: 6,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
             fontWeight: 600,
-            letterSpacing: "0.04em",
           }}
         >
           Workspace Name
         </label>
         <input
           style={inputStyle}
-          placeholder="e.g. Acme Inc, My Team, Side Project"
+          placeholder="e.g. Acme Engineering"
           value={name}
           onChange={(e) => {
             setName(e.target.value);
@@ -112,37 +112,20 @@ export function CreateWorkspaceModal({ onClose }: Props) {
           }}
           onKeyDown={(e) => e.key === "Enter" && handleCreate()}
           autoFocus
-          maxLength={50}
+          maxLength={80}
         />
-        {name.trim() && (
-          <p
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              marginTop: 4,
-            }}
-          >
-            URL slug:{" "}
-            <span style={{ color: "var(--accent)" }}>
-              {name
-                .toLowerCase()
-                .replace(/\s+/g, "-")
-                .replace(/[^a-z0-9-]/g, "")}
-            </span>
-          </p>
-        )}
       </div>
 
       {error && (
         <div
           style={{
-            marginBottom: 12,
-            padding: "8px 12px",
-            background: "rgba(255,77,106,0.1)",
-            border: "1px solid rgba(255,77,106,0.3)",
-            borderRadius: "var(--radius-sm)",
+            background: "rgba(255, 77, 106, 0.1)",
+            border: "1px solid rgba(255, 77, 106, 0.3)",
+            borderRadius: 8,
+            padding: "10px 12px",
             fontSize: 13,
             color: "var(--danger)",
+            marginBottom: 12,
           }}
         >
           {error}
@@ -153,18 +136,29 @@ export function CreateWorkspaceModal({ onClose }: Props) {
         style={{
           ...btnPrimaryStyle,
           opacity: loading || !name.trim() ? 0.6 : 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
+          cursor: loading || !name.trim() ? "not-allowed" : "pointer",
         }}
         onClick={handleCreate}
         disabled={loading || !name.trim()}
       >
-        {loading && (
-          <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+        {loading ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+            <span
+              style={{
+                width: 14,
+                height: 14,
+                border: "2px solid rgba(255,255,255,0.3)",
+                borderTopColor: "#fff",
+                borderRadius: "50%",
+                display: "inline-block",
+                animation: "spin 0.7s linear infinite",
+              }}
+            />
+            Creating…
+          </span>
+        ) : (
+          "Create Workspace"
         )}
-        {loading ? "Creating…" : "Create Workspace"}
       </button>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -174,7 +168,7 @@ export function CreateWorkspaceModal({ onClose }: Props) {
   if (!onClose) return <div style={{ padding: 24 }}>{content}</div>;
 
   return (
-    <Modal title="Create a new workspace" onClose={onClose}>
+    <Modal title="Create Workspace" onClose={onClose}>
       {content}
     </Modal>
   );

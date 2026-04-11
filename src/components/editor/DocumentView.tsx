@@ -7,7 +7,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import * as Y from "yjs";
-import { SupabaseProvider } from "y-supabase";
+import SupabaseProvider from "y-supabase";
 import { useUser } from "@clerk/nextjs";
 import {
   Bold, Italic, Strikethrough, List, ListOrdered,
@@ -108,7 +108,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const editor = useEditor(
     {
       extensions: [
-        StarterKit.configure({ history: false }), // Y.js handles history
+      StarterKit.configure({}),
         Placeholder.configure({ placeholder: "Start writing something great…" }),
         ...(ydocRef.current
           ? [
