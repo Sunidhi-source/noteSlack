@@ -1,493 +1,481 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useWorkspaceStore } from "@/store/workspace";
 import {
   Hash,
   FileText,
-  Users,
-  MessageSquare,
-  Plus,
+  MessageCircle,
   ArrowRight,
+  Activity,
   Zap,
 } from "lucide-react";
-import { useWorkspaceStore } from "@/store/workspace";
-import { useSupabaseClient } from "@/lib/supabase/client";
-import { Message } from "@/types";
-import {
-  formatRelativeTime,
-  generateUserColor,
-  getInitials,
-} from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/utils";
 
 interface Props {
   workspaceId: string;
 }
 
+interface ActivityItem {
+  type: "message" | "document";
+  id: string;
+  actor: string;
+  description: string;
+  preview: string;
+  link: string;
+  timestamp: string;
+}
+
 export function WorkspaceHome({ workspaceId }: Props) {
   const { currentWorkspace, channels, documents, members } =
     useWorkspaceStore();
-  const supabase = useSupabaseClient();
-  const [recentMessages, setRecentMessages] = useState<Message[]>([]);
-  const router = useRouter();
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [loadingActivity, setLoadingActivity] = useState(true);
 
   useEffect(() => {
-    if (!workspaceId || channels.length === 0) return;
-    const channelIds = channels.map((c) => c.id);
+    if (!workspaceId) return;
+    fetch(`/api/workspace/activity?workspaceId=${workspaceId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setActivity(data);
+        setLoadingActivity(false);
+      })
+      .catch(() => setLoadingActivity(false));
+  }, [workspaceId]);
 
-    supabase
-      .from("messages")
-      .select("*, users(full_name, avatar_url), channels(name)")
-      .in("channel_id", channelIds)
-      .order("created_at", { ascending: false })
-      .limit(8)
-      .then(({ data }) => {
-        if (data) setRecentMessages(data as Message[]);
-      });
-  }, [workspaceId, channels, supabase]);
-
-  if (!currentWorkspace) return null;
-
-  const generalChannel = channels.find((c) => c.name === "general");
-
-  return (
-    <div
-      style={{
-        flex: 1,
-        overflowY: "auto",
-        background: "var(--bg-base)",
-      }}
-    >
+  if (!currentWorkspace) {
+    return (
       <div
         style={{
-          maxWidth: 860,
-          margin: "0 auto",
-          padding: "48px 40px",
+          display: "flex",
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        {/* Hero */}
-        <div style={{ marginBottom: 40 }}>
-          <div
-            style={{
-              fontSize: 48,
-              marginBottom: 12,
-              lineHeight: 1,
-            }}
-          >
-            {currentWorkspace.icon ?? "🏠"}
+        <div style={{ textAlign: "center", color: "var(--text-muted)" }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+          <p>Loading workspace…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", background: "var(--bg-base)" }}>
+      {/* Hero banner */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, var(--accent) 0%, #7c3aed 100%)",
+          padding: "40px 48px 32px",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* Decorative circles */}
+        <div
+          style={{
+            position: "absolute",
+            right: -40,
+            top: -40,
+            width: 200,
+            height: 200,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.06)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            right: 80,
+            bottom: -60,
+            width: 140,
+            height: 140,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.04)",
+          }}
+        />
+
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>
+            {currentWorkspace.icon ?? "🚀"}
           </div>
           <h1
             style={{
-              fontSize: 32,
+              fontSize: 28,
               fontWeight: 800,
+              color: "#fff",
+              marginBottom: 6,
               fontFamily: "var(--font-display)",
-              color: "var(--text-primary)",
-              marginBottom: 8,
-              letterSpacing: "-0.02em",
             }}
           >
             Welcome to {currentWorkspace.name}
           </h1>
-          <p style={{ fontSize: 15, color: "var(--text-secondary)" }}>
-            Your team&apos;s hub for conversations and collaboration.
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.7)" }}>
+            {members.length} member{members.length !== 1 ? "s" : ""} ·{" "}
+            {channels.length} channel{channels.length !== 1 ? "s" : ""} ·{" "}
+            {documents.length} doc{documents.length !== 1 ? "s" : ""}
           </p>
         </div>
+      </div>
 
-        {/* Stats row */}
+      <div
+        style={{
+          maxWidth: 900,
+          margin: "0 auto",
+          padding: "32px 24px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 24,
+        }}
+      >
+        {/* ── Quick Links: Channels ── */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 12,
-            marginBottom: 36,
+            background: "var(--bg-surface)",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            overflow: "hidden",
           }}
         >
-          <StatCard
-            icon={<Hash size={18} style={{ color: "var(--accent)" }} />}
-            value={channels.length}
-            label="Channels"
-            color="var(--accent)"
-          />
-          <StatCard
-            icon={<FileText size={18} style={{ color: "var(--warning)" }} />}
-            value={documents.length}
-            label="Documents"
-            color="var(--warning)"
-          />
-          <StatCard
-            icon={<Users size={18} style={{ color: "var(--success)" }} />}
-            value={members.length}
-            label="Members"
-            color="var(--success)"
-          />
-        </div>
-
-        {/* Quick actions */}
-        <div style={{ marginBottom: 36 }}>
-          <SectionLabel>Quick Actions</SectionLabel>
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: 10,
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
             }}
           >
-            {generalChannel && (
-              <QuickAction
-                icon={
-                  <MessageSquare size={16} style={{ color: "var(--accent)" }} />
-                }
-                label="Open #general"
-                desc="Jump into the main conversation"
-                href={`/workspace/${workspaceId}/channel/${generalChannel.id}`}
-              />
+            <Hash size={15} style={{ color: "var(--accent)" }} />
+            <span
+              style={{
+                fontWeight: 700,
+                fontSize: 13,
+                color: "var(--text-primary)",
+              }}
+            >
+              Channels
+            </span>
+            <span
+              style={{
+                marginLeft: "auto",
+                fontSize: 11,
+                color: "var(--text-muted)",
+              }}
+            >
+              {channels.length} total
+            </span>
+          </div>
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {channels.length === 0 ? (
+              <p
+                style={{
+                  padding: "20px 18px",
+                  fontSize: 13,
+                  color: "var(--text-muted)",
+                }}
+              >
+                No channels yet. Create one!
+              </p>
+            ) : (
+              channels.map((ch) => (
+                <Link
+                  key={ch.id}
+                  href={`/workspace/${workspaceId}/channel/${ch.id}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 18px",
+                    textDecoration: "none",
+                    borderBottom: "1px solid var(--border)",
+                    color: "var(--text-secondary)",
+                    transition: "background 0.1s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "var(--bg-hover)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
+                  <Hash
+                    size={13}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: 13, flex: 1 }}>{ch.name}</span>
+                  {ch.description && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        maxWidth: 100,
+                      }}
+                    >
+                      {ch.description}
+                    </span>
+                  )}
+                  <ArrowRight
+                    size={12}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />
+                </Link>
+              ))
             )}
-            <QuickAction
-              icon={<Plus size={16} style={{ color: "var(--warning)" }} />}
-              label="Create a document"
-              desc="Start writing collaboratively"
-              href={`/workspace/${workspaceId}/docs`}
-            />
           </div>
         </div>
 
-        {/* Recent activity */}
-        {recentMessages.length > 0 && (
-          <div style={{ marginBottom: 36 }}>
-            <SectionLabel>Recent Activity</SectionLabel>
-            <div
+        {/* ── Quick Links: Documents ── */}
+        <div
+          style={{
+            background: "var(--bg-surface)",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <FileText size={15} style={{ color: "var(--accent)" }} />
+            <span
               style={{
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-md)",
-                overflow: "hidden",
+                fontWeight: 700,
+                fontSize: 13,
+                color: "var(--text-primary)",
               }}
             >
-              {recentMessages.map((msg, i) => {
-                const name = msg.users?.full_name ?? "Someone";
-                const color = generateUserColor(msg.user_id);
-                return (
-                  <Link
-                    key={msg.id}
-                    href={`/workspace/${workspaceId}/channel/${msg.channel_id}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                      padding: "12px 16px",
-                      borderBottom:
-                        i < recentMessages.length - 1
-                          ? "1px solid var(--border)"
-                          : "none",
-                      textDecoration: "none",
-                      transition: "background 0.1s",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "var(--bg-hover)")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "transparent")
-                    }
-                  >
-                    <div
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 7,
-                        background: color,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#fff",
-                        fontSize: 10,
-                        fontWeight: 700,
-                        flexShrink: 0,
-                        marginTop: 1,
-                      }}
-                    >
-                      {getInitials(name)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          marginBottom: 2,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color,
-                          }}
-                        >
-                          {name}
-                        </span>
-                        <span
-                          style={{ fontSize: 11, color: "var(--text-muted)" }}
-                        >
-                          in{" "}
-                          <span style={{ color: "var(--accent)" }}>
-                            #
-                            {(msg as Message & { channels?: { name: string } })
-                              .channels?.name ?? "channel"}
-                          </span>
-                        </span>
-                        <span
-                          style={{
-                            marginLeft: "auto",
-                            fontSize: 11,
-                            color: "var(--text-muted)",
-                          }}
-                        >
-                          {formatRelativeTime(msg.created_at)}
-                        </span>
-                      </div>
-                      <p
-                        style={{
-                          fontSize: 13,
-                          color: "var(--text-secondary)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          margin: 0,
-                        }}
-                      >
-                        {msg.content}
-                      </p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+              Documents
+            </span>
+            <span
+              style={{
+                marginLeft: "auto",
+                fontSize: 11,
+                color: "var(--text-muted)",
+              }}
+            >
+              {documents.length} total
+            </span>
           </div>
-        )}
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {documents.length === 0 ? (
+              <p
+                style={{
+                  padding: "20px 18px",
+                  fontSize: 13,
+                  color: "var(--text-muted)",
+                }}
+              >
+                No documents yet. Create one!
+              </p>
+            ) : (
+              documents.map((d) => (
+                <Link
+                  key={d.id}
+                  href={`/workspace/${workspaceId}/docs/${d.id}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 18px",
+                    textDecoration: "none",
+                    borderBottom: "1px solid var(--border)",
+                    color: "var(--text-secondary)",
+                    transition: "background 0.1s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "var(--bg-hover)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
+                  <FileText
+                    size={13}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 13,
+                      flex: 1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {d.title || "Untitled"}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {formatRelativeTime(d.updated_at)}
+                  </span>
+                  <ArrowRight
+                    size={12}
+                    style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                  />
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
 
-        {/* Members */}
-        {members.length > 0 && (
-          <div>
-            <SectionLabel>Team Members</SectionLabel>
-            <div
+        {/* ── Activity Feed ── */}
+        <div
+          style={{
+            background: "var(--bg-surface)",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            overflow: "hidden",
+            gridColumn: "1 / -1",
+          }}
+        >
+          <div
+            style={{
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Activity size={15} style={{ color: "var(--accent)" }} />
+            <span
               style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 10,
+                fontWeight: 700,
+                fontSize: 13,
+                color: "var(--text-primary)",
               }}
             >
-              {members.map((m) => {
-                const color = generateUserColor(m.id);
-                return (
+              Recent Activity
+            </span>
+          </div>
+
+          {loadingActivity ? (
+            <div
+              style={{
+                padding: "24px",
+                textAlign: "center",
+                color: "var(--text-muted)",
+                fontSize: 13,
+              }}
+            >
+              Loading activity…
+            </div>
+          ) : activity.length === 0 ? (
+            <div
+              style={{
+                padding: "32px",
+                textAlign: "center",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Zap size={24} style={{ margin: "0 auto 8px", opacity: 0.4 }} />
+              <p style={{ fontSize: 13 }}>
+                No activity yet. Start a conversation!
+              </p>
+            </div>
+          ) : (
+            <div style={{ maxHeight: 320, overflowY: "auto" }}>
+              {activity.map((item) => (
+                <Link
+                  key={`${item.type}-${item.id}`}
+                  href={item.link}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    padding: "10px 18px",
+                    textDecoration: "none",
+                    borderBottom: "1px solid var(--border)",
+                    transition: "background 0.1s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "var(--bg-hover)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
                   <div
-                    key={m.id}
                     style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      flexShrink: 0,
+                      background:
+                        item.type === "message"
+                          ? "var(--accent-soft)"
+                          : "rgba(16,185,129,0.1)",
                       display: "flex",
                       alignItems: "center",
-                      gap: 8,
-                      padding: "8px 14px",
-                      background: "var(--bg-surface)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-md)",
-                      cursor: "pointer",
-                      transition: "border-color 0.15s",
+                      justifyContent: "center",
                     }}
-                    onMouseEnter={(e) =>
-                      ((e.currentTarget as HTMLDivElement).style.borderColor =
-                        "var(--border-accent)")
-                    }
-                    onMouseLeave={(e) =>
-                      ((e.currentTarget as HTMLDivElement).style.borderColor =
-                        "var(--border)")
-                    }
-                    onClick={() =>
-                      router.push(`/workspace/${workspaceId}/dm/${m.id}`)
-                    }
                   >
-                    <div
+                    {item.type === "message" ? (
+                      <MessageCircle
+                        size={13}
+                        style={{ color: "var(--accent)" }}
+                      />
+                    ) : (
+                      <FileText size={13} style={{ color: "#10b981" }} />
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
                       style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: "50%",
-                        background: color,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#fff",
-                        fontSize: 10,
-                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "var(--text-primary)",
+                        marginBottom: 2,
                       }}
                     >
-                      {getInitials(m.full_name ?? "U")}
-                    </div>
-                    <div>
-                      <p
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 500,
-                          color: "var(--text-primary)",
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        {m.full_name ?? "Unknown"}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 11,
-                          color: "var(--success)",
-                        }}
-                      >
-                        ● Active
-                      </p>
-                    </div>
+                      <strong>{item.actor}</strong>{" "}
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {item.description}
+                      </span>
+                    </p>
+                    <p
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-secondary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {item.preview}
+                    </p>
                   </div>
-                );
-              })}
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {formatRelativeTime(item.timestamp)}
+                  </span>
+                </Link>
+              ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
-  );
-}
-
-function StatCard({
-  icon,
-  value,
-  label,
-  color,
-}: {
-  icon: React.ReactNode;
-  value: number;
-  label: string;
-  color: string;
-}) {
-  return (
-    <div
-      style={{
-        padding: "16px 20px",
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-md)",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      <div
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          background: `${color}20`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        {icon}
-      </div>
-      <div>
-        <p
-          style={{
-            fontSize: 22,
-            fontWeight: 800,
-            color: "var(--text-primary)",
-            fontFamily: "var(--font-display)",
-            lineHeight: 1,
-          }}
-        >
-          {value}
-        </p>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</p>
-      </div>
-    </div>
-  );
-}
-
-function QuickAction({
-  icon,
-  label,
-  desc,
-  href,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  desc: string;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "14px 16px",
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-md)",
-        textDecoration: "none",
-        transition: "border-color 0.15s, background 0.15s",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = "var(--border-accent)";
-        e.currentTarget.style.background = "var(--bg-overlay)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "var(--border)";
-        e.currentTarget.style.background = "var(--bg-surface)";
-      }}
-    >
-      <div
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          background: "var(--bg-hover)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        {icon}
-      </div>
-      <div style={{ flex: 1 }}>
-        <p
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: "var(--text-primary)",
-          }}
-        >
-          {label}
-        </p>
-        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{desc}</p>
-      </div>
-      <ArrowRight
-        size={14}
-        style={{ color: "var(--text-muted)", flexShrink: 0 }}
-      />
-    </Link>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p
-      style={{
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-        color: "var(--text-muted)",
-        marginBottom: 10,
-      }}
-    >
-      {children}
-    </p>
   );
 }

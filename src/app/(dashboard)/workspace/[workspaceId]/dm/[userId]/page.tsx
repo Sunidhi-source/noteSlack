@@ -1,24 +1,25 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { use, useState, useRef, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useDmMessages } from "@/hooks/useDmMessages";
-import { Send, MessageCircle } from "lucide-react";
+import { Send } from "lucide-react";
 import {
   getInitials,
   generateUserColor,
   formatRelativeTime,
 } from "@/lib/utils";
+import { usePresenceStatus } from "@/hooks/usePresenceStatus";
 
-export default function DmPage() {
-  const { workspaceId, userId: otherUserId } = useParams<{
-    workspaceId: string;
-    userId: string;
-  }>();
+interface Props {
+  params: Promise<{ workspaceId: string; userId: string }>;
+}
+
+export default function DmPage({ params }: Props) {
+  const { workspaceId, userId: otherUserId } = use(params);
 
   useWorkspace(workspaceId);
   const { user } = useUser();
@@ -30,11 +31,10 @@ export default function DmPage() {
 
   const otherUser = members.find((m) => m.id === otherUserId);
   const { messages, loading, sendMessage } = useDmMessages(conversationId);
+  const isOnline = usePresenceStatus(otherUserId);
 
-  // Open or get DM conversation
   useEffect(() => {
     if (!user || !otherUserId || !workspaceId) return;
-
     fetch("/api/dm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -98,9 +98,23 @@ export default function DmPage() {
             fontSize: 12,
             fontWeight: 700,
             flexShrink: 0,
+            position: "relative",
           }}
         >
           {getInitials(otherName)}
+          {/* ✅ Real presence dot */}
+          <span
+            style={{
+              position: "absolute",
+              bottom: -1,
+              right: -1,
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              background: isOnline ? "var(--success)" : "var(--text-muted)",
+              border: "2px solid var(--bg-surface)",
+            }}
+          />
         </div>
         <div>
           <p
@@ -113,7 +127,14 @@ export default function DmPage() {
           >
             {otherName}
           </p>
-          <p style={{ fontSize: 11, color: "var(--success)" }}>● Active</p>
+          <p
+            style={{
+              fontSize: 11,
+              color: isOnline ? "var(--success)" : "var(--text-muted)",
+            }}
+          >
+            {isOnline ? "● Online" : "○ Offline"}
+          </p>
         </div>
       </div>
 
@@ -194,7 +215,6 @@ export default function DmPage() {
             new Date(msg.created_at).getTime() -
               new Date(prev.created_at).getTime() <
               5 * 60 * 1000;
-
           const name = isOwn ? (user?.fullName ?? "You") : otherName;
           const color = generateUserColor(msg.sender_id);
 
@@ -228,7 +248,6 @@ export default function DmPage() {
                   </div>
                 ) : null}
               </div>
-
               <div style={{ flex: 1, minWidth: 0 }}>
                 {!grouped && (
                   <div

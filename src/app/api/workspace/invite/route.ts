@@ -2,60 +2,77 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return new NextResponse("Unauthorized", { status: 401 });
 
-  const { searchParams } = new URL(req.url);
-  const query = searchParams.get("q")?.trim();
-  const workspaceId = searchParams.get("workspace_id");
+  const body: { workspace_id: string; email: string } = await req.json();
 
-  if (!query || !workspaceId) {
-    return NextResponse.json({ messages: [], documents: [], channels: [] });
+  if (!body.workspace_id || !body.email?.trim()) {
+    return new NextResponse("workspace_id and email are required", {
+      status: 400,
+    });
   }
 
   const supabase = createServerSupabaseClient();
 
-  // Verify membership
-  const { data: member } = await supabase
+  // Check inviter is an admin/owner
+  const { data: inviter } = await supabase
     .from("workspace_members")
     .select("role")
-    .eq("workspace_id", workspaceId)
+    .eq("workspace_id", body.workspace_id)
     .eq("user_id", userId)
     .single();
 
-  if (!member) return new NextResponse("Forbidden", { status: 403 });
+  if (!inviter || !["owner", "admin"].includes(inviter.role)) {
+    return new NextResponse("Only admins and owners can invite members", {
+      status: 403,
+    });
+  }
 
-  // Search messages (full text)
-  const { data: messages } = await supabase
-    .from("messages")
-    .select(
-      "id, content, created_at, channel_id, user_id, users(full_name, avatar_url), channels(name)",
-    )
-    .eq("channels.workspace_id", workspaceId)
-    .ilike("content", `%${query}%`)
-    .order("created_at", { ascending: false })
-    .limit(20);
+  // Look up user by email
+  const { data: targetUser } = await supabase
+    .from("users")
+    .select("id")
+    .eq("email", body.email.toLowerCase().trim())
+    .single();
 
-  // Search documents
-  const { data: documents } = await supabase
-    .from("documents")
-    .select("id, title, updated_at, created_by")
-    .eq("workspace_id", workspaceId)
-    .ilike("title", `%${query}%`)
-    .order("updated_at", { ascending: false })
-    .limit(10);
+  if (!targetUser) {
+    return new NextResponse(
+      "No user found with that email. They need to sign up first.",
+      { status: 404 },
+    );
+  }
 
-  const { data: channels } = await supabase
-    .from("channels")
-    .select("id, name, description")
-    .eq("workspace_id", workspaceId)
-    .ilike("name", `%${query}%`)
-    .limit(5);
+  // Check if already a member
+  const { data: existing } = await supabase
+    .from("workspace_members")
+    .select("user_id")
+    .eq("workspace_id", body.workspace_id)
+    .eq("user_id", targetUser.id)
+    .single();
 
-  return NextResponse.json({
-    messages: messages ?? [],
-    documents: documents ?? [],
-    channels: channels ?? [],
+  if (existing) {
+    return new NextResponse("User is already a member of this workspace", {
+      status: 409,
+    });
+  }
+
+  const { error } = await supabase.from("workspace_members").insert({
+    workspace_id: body.workspace_id,
+    user_id: targetUser.id,
+    role: "member",
   });
+
+  if (error) return new NextResponse(error.message, { status: 500 });
+
+  await supabase.from("notifications").insert({
+    user_id: targetUser.id,
+    message: `You've been added to a workspace!`,
+    type: "invite",
+    link: `/workspace/${body.workspace_id}`,
+    read: false,
+  });
+
+  return NextResponse.json({ success: true });
 }

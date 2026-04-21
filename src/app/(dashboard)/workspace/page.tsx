@@ -17,7 +17,6 @@ export default async function WorkspacePage() {
 
   if (data?.workspace_id) redirect(`/workspace/${data.workspace_id}`);
 
-  // No workspace — show create modal
   return (
     <div
       style={{

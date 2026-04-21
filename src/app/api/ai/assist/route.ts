@@ -1,54 +1,42 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 
 export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return new NextResponse("Unauthorized", { status: 401 });
 
-  const { prompt, documentTitle, documentContent } = await req.json();
+  const body: {
+    text: string;
+    action: "improve" | "summarize" | "continue" | "translate";
+  } = await req.json();
 
-  if (!prompt?.trim()) {
-    return new NextResponse("Prompt is required", { status: 400 });
+  if (!body.text?.trim()) {
+    return new NextResponse("text is required", { status: 400 });
   }
 
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-opus-4-6",
-        max_tokens: 1024,
-        system: `You are an intelligent writing assistant integrated into a collaborative document editor called NoteSlack. 
-You help users improve, expand, summarize, and work with their documents.
-Be concise and practical. Return just the requested content without preambles like "Sure!" or "Here's...".
-The document you're working with is titled: "${documentTitle || "Untitled"}".`,
-        messages: [
-          {
-            role: "user",
-            content: documentContent
-              ? `Document content:\n\n${documentContent}\n\n---\n\nUser request: ${prompt}`
-              : prompt,
-          },
-        ],
-      }),
-    });
+  const prompts: Record<string, string> = {
+    improve:
+      "Improve the writing quality of the following text. Keep the same meaning but make it clearer, more professional and concise. Return ONLY the improved text with no preamble:\n\n",
+    summarize:
+      "Summarize the following text in 2-3 sentences. Return ONLY the summary:\n\n",
+    continue:
+      "Continue writing the following text naturally, adding 2-3 more sentences in the same style. Return ONLY the continuation (not the original):\n\n",
+    translate:
+      "Translate the following text to English if it's in another language, or to Spanish if it's in English. Return ONLY the translation:\n\n",
+  };
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.error("Anthropic API error:", err);
-      return new NextResponse("AI service error", { status: 500 });
-    }
+  const prompt = (prompts[body.action] ?? prompts.improve) + body.text;
 
-    const data = await response.json();
-    const content = data.content?.[0]?.text ?? "";
+  const client = new Anthropic();
+  const message = await client.messages.create({
+    model: "claude-opus-4-5",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: prompt }],
+  });
 
-    return NextResponse.json({ content });
-  } catch (err) {
-    console.error("AI assist error:", err);
-    return new NextResponse("Internal server error", { status: 500 });
-  }
+  const result =
+    message.content[0].type === "text" ? message.content[0].text : "";
+
+  return NextResponse.json({ result });
 }

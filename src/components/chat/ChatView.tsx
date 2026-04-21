@@ -2,15 +2,33 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
-import { Send, Hash, Pencil, MessageSquare } from "lucide-react";
+import {
+  Send,
+  Hash,
+  Pencil,
+  MessageSquare,
+  Trash2,
+  Pin,
+  Smile,
+  Paperclip,
+  X,
+  ChevronDown,
+} from "lucide-react";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useMessages, useTypingIndicator } from "@/hooks/useRealtime";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspaceStore } from "@/store/workspace";
 import { Message } from "@/types";
-import { getInitials, formatRelativeTime, generateUserColor } from "@/lib/utils";
+import {
+  getInitials,
+  formatRelativeTime,
+  generateUserColor,
+} from "@/lib/utils";
 import { MessageReactions } from "./MessageReactions";
 import { ThreadPanel } from "./ThreadPanel";
+
+// ── Quick emoji picker ─────────────────────────────────────────
+const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
 
 interface Props {
   workspaceId: string;
@@ -31,27 +49,61 @@ export function ChatView({ workspaceId, channelId }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+  const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
+  const [showPinned, setShowPinned] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  // Only show top-level messages (no thread replies)
   const topLevelMessages = messages.filter((m) => !m.parent_message_id);
-
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // ── Scroll to bottom on new messages ─────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [topLevelMessages]);
+  }, [topLevelMessages.length]);
+
+  // ── Show "scroll to bottom" button when scrolled up ──────────
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBtn(distFromBottom > 200);
+  }, []);
+
+  // ── Fetch pinned messages ─────────────────────────────────────
+  useEffect(() => {
+    if (!channelId) return;
+    supabase
+      .from("messages")
+      .select("*, users(full_name, avatar_url)")
+      .eq("channel_id", channelId)
+      .eq("is_pinned", true)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (data) setPinnedMessages(data as Message[]);
+      });
+  }, [channelId, supabase]);
+
+  // ── Auto-resize textarea ──────────────────────────────────────
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    sendTyping();
+  };
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || !user || sending) return;
     setSending(true);
     const content = input.trim();
     setInput("");
-
-    await supabase.from("messages").insert({
-      channel_id: channelId,
-      user_id: user.id,
-      content,
-    });
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    await supabase
+      .from("messages")
+      .insert({ channel_id: channelId, user_id: user.id, content });
     setSending(false);
   }, [input, user, sending, supabase, channelId]);
 
@@ -59,16 +111,56 @@ export function ChatView({ workspaceId, channelId }: Props) {
     if (!editContent.trim()) return;
     await supabase
       .from("messages")
-      .update({ content: editContent.trim(), edited_at: new Date().toISOString() })
+      .update({
+        content: editContent.trim(),
+        edited_at: new Date().toISOString(),
+      })
       .eq("id", messageId);
     setEditingId(null);
     setEditContent("");
   };
 
+  // ✅ NEW: Delete message
+  const handleDelete = async (messageId: string) => {
+    if (!confirm("Delete this message?")) return;
+    await supabase.from("messages").delete().eq("id", messageId);
+  };
+
+  // ✅ NEW: Pin/unpin message
+  const handleTogglePin = async (msg: Message) => {
+    const newPinned = !(msg as any).is_pinned;
+    await supabase
+      .from("messages")
+      .update({ is_pinned: newPinned })
+      .eq("id", msg.id);
+    if (newPinned) {
+      setPinnedMessages((prev) => [
+        { ...msg, is_pinned: true } as any,
+        ...prev,
+      ]);
+    } else {
+      setPinnedMessages((prev) => prev.filter((p) => p.id !== msg.id));
+    }
+  };
+
+  // ✅ NEW: Insert emoji into input
+  const insertEmoji = (emoji: string) => {
+    setInput((prev) => prev + emoji);
+    setShowEmojiPicker(false);
+    textareaRef.current?.focus();
+  };
+
   return (
     <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
-        {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          overflow: "hidden",
+        }}
+      >
+        {/* ── Header ── */}
         <div
           style={{
             height: "var(--header-h)",
@@ -94,18 +186,116 @@ export function ChatView({ workspaceId, channelId }: Props) {
           </span>
           {channel?.description && (
             <>
-              <span style={{ color: "var(--border-accent)", fontSize: 16 }}>|</span>
+              <span style={{ color: "var(--border-accent)", fontSize: 16 }}>
+                |
+              </span>
               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
                 {channel.description}
               </span>
             </>
           )}
+
+          {/* ✅ NEW: Pinned messages indicator */}
+          {pinnedMessages.length > 0 && (
+            <button
+              onClick={() => setShowPinned((v) => !v)}
+              style={{
+                marginLeft: "auto",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: "var(--accent-soft)",
+                border: "none",
+                borderRadius: 6,
+                padding: "3px 8px",
+                cursor: "pointer",
+                fontSize: 11,
+                color: "var(--accent)",
+                fontWeight: 600,
+              }}
+            >
+              <Pin size={11} /> {pinnedMessages.length} pinned
+            </button>
+          )}
         </div>
 
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "16px 0" }}>
+        {/* ✅ NEW: Pinned messages banner */}
+        {showPinned && pinnedMessages.length > 0 && (
+          <div
+            style={{
+              background: "var(--accent-soft)",
+              borderBottom: "1px solid var(--accent)",
+              padding: "8px 20px",
+              maxHeight: 120,
+              overflowY: "auto",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--accent)",
+                }}
+              >
+                📌 PINNED MESSAGES
+              </span>
+              <button
+                onClick={() => setShowPinned(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+            {pinnedMessages.map((pm) => (
+              <div
+                key={pm.id}
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  padding: "2px 0",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <strong>{pm.users?.full_name ?? "User"}:</strong>{" "}
+                {pm.content.slice(0, 100)}
+                {pm.content.length > 100 ? "…" : ""}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Messages ── */}
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "16px 0",
+            position: "relative",
+          }}
+        >
           {loading && (
-            <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13, padding: "40px 0" }}>
+            <div
+              style={{
+                textAlign: "center",
+                color: "var(--text-muted)",
+                fontSize: 13,
+                padding: "40px 0",
+              }}
+            >
               Loading messages…
             </div>
           )}
@@ -118,14 +308,21 @@ export function ChatView({ workspaceId, channelId }: Props) {
             return (
               <div
                 key={msg.id}
-                style={{ padding: "6px 20px", display: "flex", gap: 10, position: "relative" }}
+                style={{
+                  padding: "6px 20px",
+                  display: "flex",
+                  gap: 10,
+                  position: "relative",
+                }}
                 className="message-row"
                 onMouseEnter={(e) => {
-                  const actions = e.currentTarget.querySelector<HTMLElement>(".msg-actions");
+                  const actions =
+                    e.currentTarget.querySelector<HTMLElement>(".msg-actions");
                   if (actions) actions.style.opacity = "1";
                 }}
                 onMouseLeave={(e) => {
-                  const actions = e.currentTarget.querySelector<HTMLElement>(".msg-actions");
+                  const actions =
+                    e.currentTarget.querySelector<HTMLElement>(".msg-actions");
                   if (actions) actions.style.opacity = "0";
                 }}
               >
@@ -150,7 +347,14 @@ export function ChatView({ workspaceId, channelId }: Props) {
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: 8,
+                      marginBottom: 2,
+                    }}
+                  >
                     <span
                       style={{
                         fontFamily: "var(--font-display)",
@@ -165,19 +369,48 @@ export function ChatView({ workspaceId, channelId }: Props) {
                       {formatRelativeTime(msg.created_at)}
                     </span>
                     {msg.edited_at && (
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          fontStyle: "italic",
+                        }}
+                      >
                         (edited)
+                      </span>
+                    )}
+                    {/* ✅ NEW: Pinned badge */}
+                    {(msg as any).is_pinned && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "var(--accent)",
+                          background: "var(--accent-soft)",
+                          padding: "1px 5px",
+                          borderRadius: 4,
+                        }}
+                      >
+                        📌 pinned
                       </span>
                     )}
                   </div>
 
                   {editingId === msg.id ? (
-                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "flex-end",
+                      }}
+                    >
                       <textarea
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleEdit(msg.id); }
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            handleEdit(msg.id);
+                          }
                           if (e.key === "Escape") setEditingId(null);
                         }}
                         autoFocus
@@ -241,7 +474,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
                   <MessageReactions messageId={msg.id} />
                 </div>
 
-                {/* Hover actions */}
+                {/* ✅ ENHANCED: Hover actions with delete + pin */}
                 <div
                   className="msg-actions"
                   style={{
@@ -258,42 +491,38 @@ export function ChatView({ workspaceId, channelId }: Props) {
                     padding: "4px",
                   }}
                 >
-                  {isOwn && (
-                    <button
-                      onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}
-                      title="Edit"
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: 4,
-                        borderRadius: 4,
-                        color: "var(--text-muted)",
-                        display: "flex",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setThreadMessage(msg)}
+                  <ActionBtn
                     title="Reply in thread"
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 4,
-                      borderRadius: 4,
-                      color: "var(--text-muted)",
-                      display: "flex",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+                    onClick={() => setThreadMessage(msg)}
                   >
                     <MessageSquare size={13} />
-                  </button>
+                  </ActionBtn>
+                  <ActionBtn
+                    title="Pin message"
+                    onClick={() => handleTogglePin(msg)}
+                  >
+                    <Pin size={13} />
+                  </ActionBtn>
+                  {isOwn && (
+                    <>
+                      <ActionBtn
+                        title="Edit"
+                        onClick={() => {
+                          setEditingId(msg.id);
+                          setEditContent(msg.content);
+                        }}
+                      >
+                        <Pencil size={13} />
+                      </ActionBtn>
+                      <ActionBtn
+                        title="Delete"
+                        onClick={() => handleDelete(msg.id)}
+                        danger
+                      >
+                        <Trash2 size={13} />
+                      </ActionBtn>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -309,14 +538,42 @@ export function ChatView({ workspaceId, channelId }: Props) {
                 animation: "pulse 1.5s ease-in-out infinite",
               }}
             >
-              {typingUsers.map((u) => u.name ?? "Someone").join(", ")} is typing…
+              {typingUsers.map((u) => u.name ?? "Someone").join(", ")} is
+              typing…
             </div>
           )}
 
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
+        {/* ✅ NEW: Scroll to bottom button */}
+        {showScrollBtn && (
+          <button
+            onClick={() =>
+              bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+            }
+            style={{
+              position: "absolute",
+              bottom: 100,
+              right: 32,
+              background: "var(--accent)",
+              border: "none",
+              borderRadius: "50%",
+              width: 36,
+              height: 36,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.2)",
+              zIndex: 10,
+            }}
+          >
+            <ChevronDown size={16} color="#fff" />
+          </button>
+        )}
+
+        {/* ── Input ── */}
         <div
           style={{
             padding: "12px 20px",
@@ -324,6 +581,45 @@ export function ChatView({ workspaceId, channelId }: Props) {
             flexShrink: 0,
           }}
         >
+          {/* ✅ NEW: Emoji picker */}
+          {showEmojiPicker && (
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                padding: "8px 12px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                marginBottom: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {QUICK_EMOJIS.map((em) => (
+                <button
+                  key={em}
+                  onClick={() => insertEmoji(em)}
+                  style={{
+                    fontSize: 20,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    borderRadius: 4,
+                    padding: "2px 4px",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "var(--bg-hover)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "none")
+                  }
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div
             style={{
               display: "flex",
@@ -335,15 +631,45 @@ export function ChatView({ workspaceId, channelId }: Props) {
               padding: "8px 12px",
               transition: "border-color 0.15s",
             }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+            onFocus={(e) =>
+              (e.currentTarget.style.borderColor = "var(--accent)")
+            }
+            onBlur={(e) =>
+              (e.currentTarget.style.borderColor = "var(--border)")
+            }
           >
+            {/* ✅ NEW: Emoji button */}
+            <button
+              onClick={() => setShowEmojiPicker((v) => !v)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--text-muted)",
+                padding: "4px",
+                borderRadius: 6,
+                display: "flex",
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.color = "var(--text-primary)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.color = "var(--text-muted)")
+              }
+            >
+              <Smile size={18} />
+            </button>
+
             <textarea
+              ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-                else sendTyping();
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
               }}
               placeholder={`Message #${channel?.name ?? "channel"}`}
               rows={1}
@@ -358,6 +684,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
                 fontFamily: "var(--font-body)",
                 lineHeight: 1.5,
                 maxHeight: 120,
+                overflow: "auto",
               }}
             />
             <button
@@ -376,11 +703,21 @@ export function ChatView({ workspaceId, channelId }: Props) {
                 flexShrink: 0,
               }}
             >
-              <Send size={16} color={input.trim() ? "#fff" : "var(--text-muted)"} />
+              <Send
+                size={16}
+                color={input.trim() ? "#fff" : "var(--text-muted)"}
+              />
             </button>
           </div>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, paddingLeft: 2 }}>
-            Press Enter to send, Shift+Enter for new line
+          <p
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 4,
+              paddingLeft: 2,
+            }}
+          >
+            Enter to send · Shift+Enter for new line
           </p>
         </div>
       </div>
@@ -394,11 +731,48 @@ export function ChatView({ workspaceId, channelId }: Props) {
       )}
 
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
       `}</style>
     </div>
+  );
+}
+
+function ActionBtn({
+  children,
+  onClick,
+  title,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title?: string;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 4,
+        borderRadius: 4,
+        color: danger ? "var(--error, #e53e3e)" : "var(--text-muted)",
+        display: "flex",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.color = danger
+          ? "#e53e3e"
+          : "var(--text-primary)")
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.color = danger
+          ? "var(--error, #e53e3e)"
+          : "var(--text-muted)")
+      }
+    >
+      {children}
+    </button>
   );
 }
