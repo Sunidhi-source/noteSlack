@@ -18,11 +18,8 @@ export function WorkspaceSwitcher() {
   useEffect(() => {
     fetch("/api/workspace")
       .then((r) => r.json())
-      .then((data: { workspaces: Workspace }[]) => {
-        const ws = data
-          .map((item) => item.workspaces)
-          .filter(Boolean) as Workspace[];
-        setWorkspaces(ws);
+      .then((data: Workspace[]) => {
+        setWorkspaces(Array.isArray(data) ? data : []);
       })
       .catch(() => {});
   }, [currentWorkspace?.id]);

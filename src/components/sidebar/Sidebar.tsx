@@ -26,7 +26,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
   const { channels, documents, currentWorkspace, members, unreadCounts } =
-    useWorkspaceStore() as any;
+    useWorkspaceStore();
 
   const [channelsOpen, setChannelsOpen] = useState(true);
   const [docsOpen, setDocsOpen] = useState(true);
@@ -385,7 +385,7 @@ function SidebarItem({
       </span>
       {suffix}
       {/* ✅ NEW: Unread badge */}
-      {badge > 0 && (
+      {(badge ?? 0) > 0 && (
         <span
           style={{
             background: "var(--accent)",

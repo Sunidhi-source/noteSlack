@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     ...(recentDocs ?? []).map((d: any) => ({
       type: "document" as const,
       id: d.id,
-      actor: (d.users as any)?.full_name ?? "Someone",
+      actor: (d.users as { full_name: string | null } | null)?.full_name ?? "Someone",
       description: `edited document`,
       preview: d.title,
       link: `/workspace/${workspaceId}/docs/${d.id}`,

@@ -18,14 +18,14 @@ export async function POST(req: Request) {
     return new NextResponse("Webhook secret not configured", { status: 500 });
   }
 
-  let event: { type: string; data: any };
+  let event: { type: string; data: Record<string, any> };
   try {
     const wh = new Webhook(secret);
     event = wh.verify(body, {
       "svix-id": svixId,
       "svix-timestamp": svixTimestamp,
       "svix-signature": svixSignature,
-    }) as any;
+    }) as { type: string; data: Record<string, any> };
   } catch (err) {
     console.error("Webhook verification failed:", err);
     return new NextResponse("Invalid signature", { status: 400 });

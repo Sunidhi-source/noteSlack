@@ -28,7 +28,7 @@ export function NotificationBell() {
 
   const handleClick = async (id: string, link?: string | null) => {
     markNotificationRead(id);
-    await fetch("/api/notifications", {
+    await fetch("/api/notification", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
@@ -41,7 +41,7 @@ export function NotificationBell() {
 
   const handleMarkAll = async () => {
     markAllNotificationsRead();
-    await fetch("/api/notifications", {
+    await fetch("/api/notification", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mark_all: true }),

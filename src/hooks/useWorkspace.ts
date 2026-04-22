@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspaceStore } from "@/store/workspace";
-import { Channel, Document, Notification, User, Workspace } from "@/types";
+import { Channel, Document, DmConversation, Notification, User, Workspace } from "@/types";
 
 export function useWorkspace(workspaceId: string) {
   const supabase = useSupabaseClient();
@@ -15,6 +15,7 @@ export function useWorkspace(workspaceId: string) {
     setDocuments,
     setMembers,
     setNotifications,
+    setDmConversations,
     addNotification,
     incrementUnread,
   } = useWorkspaceStore();
@@ -64,6 +65,19 @@ export function useWorkspace(workspaceId: string) {
             .filter(Boolean) as unknown as User[];
           setMembers(users);
         }
+      });
+
+    // ── Fetch DM conversations for current user in this workspace
+    supabase
+      .from("dm_conversations")
+      .select(
+        "*, participant_a_user:users!dm_conversations_participant_a_fkey(id, full_name, avatar_url), participant_b_user:users!dm_conversations_participant_b_fkey(id, full_name, avatar_url)"
+      )
+      .eq("workspace_id", workspaceId)
+      .or(`participant_a.eq.${user.id},participant_b.eq.${user.id}`)
+      .order("updated_at", { ascending: false })
+      .then(({ data }) => {
+        if (data) setDmConversations(data as DmConversation[]);
       });
 
     // ── Fetch notifications for current user
@@ -127,6 +141,7 @@ export function useWorkspace(workspaceId: string) {
     setChannels,
     setDocuments,
     setMembers,
+    setDmConversations,
     setNotifications,
     addNotification,
     incrementUnread,

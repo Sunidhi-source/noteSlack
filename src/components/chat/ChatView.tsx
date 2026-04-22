@@ -128,14 +128,14 @@ export function ChatView({ workspaceId, channelId }: Props) {
 
   // ✅ NEW: Pin/unpin message
   const handleTogglePin = async (msg: Message) => {
-    const newPinned = !(msg as any).is_pinned;
+    const newPinned = !msg.is_pinned;
     await supabase
       .from("messages")
       .update({ is_pinned: newPinned })
       .eq("id", msg.id);
     if (newPinned) {
       setPinnedMessages((prev) => [
-        { ...msg, is_pinned: true } as any,
+        { ...msg, is_pinned: true },
         ...prev,
       ]);
     } else {
@@ -380,7 +380,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
                       </span>
                     )}
                     {/* ✅ NEW: Pinned badge */}
-                    {(msg as any).is_pinned && (
+                    {msg.is_pinned && (
                       <span
                         style={{
                           fontSize: 10,

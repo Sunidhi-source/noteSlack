@@ -42,6 +42,7 @@ export interface Message {
   edited_at: string | null;
   created_at: string;
   parent_message_id?: string | null;
+  is_pinned?: boolean;
   users?: Pick<User, "full_name" | "avatar_url">;
   // joined via channels relation in search
   channels?: Pick<Channel, "name"> | null;

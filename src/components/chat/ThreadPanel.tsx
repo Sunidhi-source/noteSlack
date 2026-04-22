@@ -38,7 +38,14 @@ export function ThreadPanel({ parentMessage, onClose }: Props) {
           table: "messages",
           filter: `parent_message_id=eq.${parentMessage.id}`,
         },
-        (payload) => setReplies((prev) => [...prev, payload.new as Message])
+        async (payload) => {
+          const { data: fullMsg } = await supabase
+            .from("messages")
+            .select("*, users(full_name, avatar_url)")
+            .eq("id", (payload.new as Message).id)
+            .single();
+          if (fullMsg) setReplies((prev) => [...prev, fullMsg as Message]);
+        }
       )
       .subscribe();
 
