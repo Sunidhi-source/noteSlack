@@ -13,7 +13,7 @@ export default async function WorkspacePage() {
     .select("workspace_id")
     .eq("user_id", userId)
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (data?.workspace_id) redirect(`/workspace/${data.workspace_id}`);
 

@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   const { data: messages } = await supabase
     .from("messages")
     .select(
-      "id, content, created_at, channel_id, user_id, users(full_name, avatar_url), channels(name)",
+      "id, content, created_at, channel_id, user_id, users(full_name, avatar_url), channels!inner(name, workspace_id)",
     )
     .eq("channels.workspace_id", workspaceId)
     .ilike("content", `%${query}%`)
