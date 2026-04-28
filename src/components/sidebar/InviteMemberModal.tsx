@@ -1,102 +1,175 @@
 "use client";
 
 import { useState } from "react";
-import { X, UserPlus, Loader2 } from "lucide-react";
+import { useWorkspaceStore } from "@/store/workspace";
 
 interface Props {
   workspaceId: string;
   onClose: () => void;
 }
 
-export function InviteMemberModal({ workspaceId, onClose }: Props) {
+export default function InviteMemberModal({ workspaceId, onClose }: Props) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"member" | "admin">("member");
+  const [role, setRole] = useState<"admin" | "member">("member");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const addMember = useWorkspaceStore((s) => s.addMember);
 
-  const handleInvite = async () => {
-    if (!email.trim()) return;
-    setLoading(true);
+  async function handleInvite() {
     setError(null);
-
-    const res = await fetch("/api/workspace/invite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspace_id: workspaceId, email: email.trim(), role }),
-    });
-
-    setLoading(false);
-
-    if (res.ok) {
-      setSuccess(true);
-      setTimeout(onClose, 1500);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Something went wrong.");
+    if (!email.trim()) {
+      setError("Please enter an email address.");
+      return;
     }
-  };
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/workspace/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId, email: email.trim(), role }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong.");
+        return;
+      }
+
+      // Update local store so sidebar updates immediately
+      if (data.member) {
+        addMember(data.member);
+      }
+
+      setSuccess(true);
+      setEmail("");
+      setTimeout(onClose, 1500);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 50,
+      }}
+      onClick={onClose}
     >
-      <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", width: 420, padding: "24px", boxShadow: "0 20px 40px rgba(0,0,0,0.3)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <UserPlus size={18} style={{ color: "var(--accent)" }} />
-            <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, margin: 0 }}>Invite to workspace</h2>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={18} /></button>
-        </div>
+      <div
+        style={{
+          background: "var(--bg-primary)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          padding: 24,
+          width: 400,
+          maxWidth: "90vw",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>
+          Invite to Workspace
+        </h2>
+        <p style={{ margin: "0 0 20px", fontSize: 13, color: "var(--text-muted)" }}>
+          They must already have a NoteSlack account.
+        </p>
 
         {success ? (
-          <div style={{ textAlign: "center", padding: "16px 0", color: "var(--success)", fontSize: 14 }}>
-            ✓ Invitation sent!
-          </div>
+          <p style={{ color: "var(--green)", textAlign: "center", padding: "12px 0" }}>
+            ✅ Member added successfully!
+          </p>
         ) : (
           <>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>Email address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleInvite(); }}
-                placeholder="teammate@example.com"
-                autoFocus
-                style={{ width: "100%", padding: "9px 12px", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
-              />
-            </div>
+            <label style={{ display: "block", marginBottom: 8, fontSize: 13, fontWeight: 500 }}>
+              Email address
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+              placeholder="teammate@example.com"
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg-secondary)",
+                color: "var(--text-primary)",
+                fontSize: 14,
+                marginBottom: 12,
+                boxSizing: "border-box",
+              }}
+            />
 
-            <div style={{ marginBottom: 18 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>Role</label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as "member" | "admin")}
-                style={{ width: "100%", padding: "9px 12px", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: 14, outline: "none", fontFamily: "inherit" }}
-              >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
+            <label style={{ display: "block", marginBottom: 8, fontSize: 13, fontWeight: 500 }}>
+              Role
+            </label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as "admin" | "member")}
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg-secondary)",
+                color: "var(--text-primary)",
+                fontSize: 14,
+                marginBottom: 16,
+                boxSizing: "border-box",
+              }}
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
 
             {error && (
-              <p style={{ fontSize: 13, color: "var(--danger)", marginBottom: 14 }}>{error}</p>
+              <p style={{ color: "var(--red, #ef4444)", fontSize: 13, marginBottom: 12 }}>
+                {error}
+              </p>
             )}
 
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={onClose} style={{ padding: "8px 16px", background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: 14, color: "var(--text-secondary)", fontFamily: "inherit" }}>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={onClose}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  cursor: "pointer",
+                  fontSize: 14,
+                }}
+              >
                 Cancel
               </button>
               <button
                 onClick={handleInvite}
-                disabled={!email.trim() || loading}
-                style={{ padding: "8px 18px", background: "var(--accent)", border: "none", borderRadius: "var(--radius-sm)", cursor: email.trim() ? "pointer" : "not-allowed", fontSize: 14, color: "#fff", fontFamily: "inherit", opacity: email.trim() ? 1 : 0.6, display: "flex", alignItems: "center", gap: 6 }}
+                disabled={loading}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  fontSize: 14,
+                  opacity: loading ? 0.7 : 1,
+                }}
               >
-                {loading && <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />}
-                Invite
+                {loading ? "Inviting…" : "Send Invite"}
               </button>
             </div>
           </>
