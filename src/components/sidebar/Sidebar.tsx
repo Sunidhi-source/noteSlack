@@ -11,8 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   Search,
-  MessageCircle,
-  Bell,
+  UserPlus,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/store/workspace";
 import { CreateChannelModal } from "./CreateChannelModal";
@@ -20,6 +19,7 @@ import { CreateDocModal } from "./CreateDocModal";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { SearchModal } from "@/components/ui/SearchModal";
 import { NotificationBell } from "@/components/ui/NotificationBell";
+import { InviteMemberModal } from "./InviteMemberModal";
 import { generateUserColor, getInitials } from "@/lib/utils";
 
 export function Sidebar() {
@@ -34,6 +34,8 @@ export function Sidebar() {
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showCreateDoc, setShowCreateDoc] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  // FIX: wire up invite modal state
+  const [showInvite, setShowInvite] = useState(false);
 
   const workspaceId = currentWorkspace?.id;
   if (!workspaceId) return null;
@@ -65,13 +67,38 @@ export function Sidebar() {
           }}
         >
           <WorkspaceSwitcher />
-          {/* ✅ NEW: Notification bell in header */}
-          <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+            {/* FIX: Invite member button in header for quick access */}
+            <button
+              onClick={() => setShowInvite(true)}
+              title="Invite member"
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--text-secondary)",
+                display: "flex",
+                alignItems: "center",
+                padding: "7px",
+                borderRadius: "var(--radius-sm)",
+                transition: "color 0.15s, background 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text-primary)";
+                e.currentTarget.style.background = "var(--bg-overlay)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-secondary)";
+                e.currentTarget.style.background = "none";
+              }}
+            >
+              <UserPlus size={16} />
+            </button>
             <NotificationBell />
           </div>
         </div>
 
-        {/* ✅ ENHANCED: Search button — opens modal */}
+        {/* Search button */}
         <button
           onClick={() => setShowSearch(true)}
           style={{
@@ -124,11 +151,14 @@ export function Sidebar() {
               />
             ))}
 
-          {/* ── Direct Messages ── */}
+          {/* ── Direct Messages ── 
+              FIX: added onAdd to open invite modal so users can add people
+              right from the DMs section */}
           <SectionHeader
             label="Direct Messages"
             isOpen={dmsOpen}
             onToggle={() => setDmsOpen((v) => !v)}
+            onAdd={() => setShowInvite(true)}
           />
           {dmsOpen &&
             dmMembers.map((member: any) => {
@@ -161,7 +191,6 @@ export function Sidebar() {
                       {initials}
                     </div>
                   }
-                  // ✅ Show presence dot
                   suffix={
                     <span
                       style={{
@@ -199,7 +228,7 @@ export function Sidebar() {
             ))}
         </div>
 
-        {/* Footer */}
+        {/* Footer — clicking the user area goes to your own profile */}
         <div
           style={{
             padding: "10px 12px",
@@ -210,7 +239,10 @@ export function Sidebar() {
           }}
         >
           <UserButton />
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <Link
+            href={`/workspace/${workspaceId}/profile/${user?.id}`}
+            style={{ flex: 1, minWidth: 0, textDecoration: "none" }}
+          >
             <p
               style={{
                 fontSize: 13,
@@ -224,7 +256,7 @@ export function Sidebar() {
               {user?.fullName ?? "User"}
             </p>
             <p style={{ fontSize: 10, color: "var(--success)" }}>● Active</p>
-          </div>
+          </Link>
         </div>
       </aside>
 
@@ -245,6 +277,13 @@ export function Sidebar() {
         <SearchModal
           workspaceId={workspaceId}
           onClose={() => setShowSearch(false)}
+        />
+      )}
+      {/* FIX: invite modal now properly wired */}
+      {showInvite && (
+        <InviteMemberModal
+          workspaceId={workspaceId}
+          onClose={() => setShowInvite(false)}
         />
       )}
     </>
@@ -384,7 +423,6 @@ function SidebarItem({
         {label}
       </span>
       {suffix}
-      {/* ✅ NEW: Unread badge */}
       {(badge ?? 0) > 0 && (
         <span
           style={{
