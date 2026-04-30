@@ -19,9 +19,10 @@ import { CreateDocModal } from "./CreateDocModal";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { SearchModal } from "@/components/ui/SearchModal";
 import { NotificationBell } from "@/components/ui/NotificationBell";
-import { InviteMemberModal } from "./InviteMemberModal";
+import InviteMemberModal from "./InviteMemberModal";
 import { generateUserColor, getInitials } from "@/lib/utils";
-
+import type { Channel, Document, User } from "@/types";
+ 
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
@@ -40,7 +41,7 @@ export function Sidebar() {
   const workspaceId = currentWorkspace?.id;
   if (!workspaceId) return null;
 
-  const dmMembers = (members ?? []).filter((m: any) => m.id !== user?.id);
+  const dmMembers = (members ?? []).filter((m: User) => m.id !== user?.id);
 
   return (
     <>
@@ -138,7 +139,7 @@ export function Sidebar() {
             onAdd={() => setShowCreateChannel(true)}
           />
           {channelsOpen &&
-            channels.map((ch: any) => (
+            channels.map((ch: Channel) => (
               <SidebarItem
                 key={ch.id}
                 href={`/workspace/${workspaceId}/channel/${ch.id}`}
@@ -161,7 +162,7 @@ export function Sidebar() {
             onAdd={() => setShowInvite(true)}
           />
           {dmsOpen &&
-            dmMembers.map((member: any) => {
+            dmMembers.map((member: User) => {
               const color = generateUserColor(member.id);
               const initials = getInitials(member.full_name ?? "?");
               return (
@@ -215,7 +216,7 @@ export function Sidebar() {
             onAdd={() => setShowCreateDoc(true)}
           />
           {docsOpen &&
-            documents.map((doc: any) => (
+            documents.map((doc: Document) => (
               <SidebarItem
                 key={doc.id}
                 href={`/workspace/${workspaceId}/docs/${doc.id}`}
@@ -436,7 +437,7 @@ function SidebarItem({
             textAlign: "center",
           }}
         >
-          {badge > 99 ? "99+" : badge}
+          {(badge ?? 0) > 99 ? "99+" : (badge ?? 0)}
         </span>
       )}
     </Link>

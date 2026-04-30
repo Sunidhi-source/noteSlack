@@ -28,6 +28,7 @@ interface WorkspaceState {
   // Incrementals
   addChannel: (channel: Channel) => void;
   addDocument: (document: Document) => void;
+  addMember: (member: User) => void;
   updateDocument: (id: string, updates: Partial<Document>) => void;
   addNotification: (n: Notification) => void;
   markNotificationRead: (id: string) => void;
@@ -57,6 +58,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   addChannel: (channel) => set((s) => ({ channels: [...s.channels, channel] })),
   addDocument: (document) =>
     set((s) => ({ documents: [document, ...s.documents] })),
+  addMember: (member) => set((s) => ({ members: [...s.members, member] })),
   updateDocument: (id, updates) =>
     set((s) => ({
       documents: s.documents.map((d) =>
