@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useWorkspaceStore } from "@/store/workspace";
+import type { User } from "@/types";
 
 interface Props {
   workspaceId: string;
@@ -25,22 +26,27 @@ export default function InviteMemberModal({ workspaceId, onClose }: Props) {
 
     setLoading(true);
     try {
+      // FIX: send workspace_id (snake_case) to match what the API expects
       const res = await fetch("/api/workspace/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId, email: email.trim(), role }),
+        body: JSON.stringify({
+          workspace_id: workspaceId,  // was "workspaceId" — API expects "workspace_id"
+          email: email.trim(),
+          role,
+        }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
+        setError(data.error ?? data.message ?? "Something went wrong.");
         return;
       }
 
-      // Update local store so sidebar updates immediately
+      // FIX: API now returns the new member object; update the local store
       if (data.member) {
-        addMember(data.member);
+        addMember(data.member as User);
       }
 
       setSuccess(true);
@@ -99,6 +105,7 @@ export default function InviteMemberModal({ workspaceId, onClose }: Props) {
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleInvite()}
               placeholder="teammate@example.com"
+              autoFocus
               style={{
                 width: "100%",
                 padding: "8px 12px",

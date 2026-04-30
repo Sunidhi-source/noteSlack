@@ -1,78 +1,65 @@
-import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+// src/app/api/workspace/invite/route.ts
+import { clerkClient } from '@clerk/nextjs/server'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { auth } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+  const { userId } = await auth()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body: { workspace_id: string; email: string } = await req.json();
+  const { email, workspace_id: workspaceId, role } = await req.json()
 
-  if (!body.workspace_id || !body.email?.trim()) {
-    return new NextResponse("workspace_id and email are required", {
-      status: 400,
-    });
+  if (!workspaceId) {
+    return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
   }
 
-  const supabase = createServerSupabaseClient();
+  const clerk = await clerkClient()
+  const users = await clerk.users.getUserList({ emailAddress: [email] })
 
-  // Check inviter is an admin/owner
-  const { data: inviter } = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", body.workspace_id)
-    .eq("user_id", userId)
-    .single();
-
-  if (!inviter || !["owner", "admin"].includes(inviter.role)) {
-    return new NextResponse("Only admins and owners can invite members", {
-      status: 403,
-    });
+  if (!users.data.length) {
+    return NextResponse.json(
+      { error: 'No user found with that email. They need to sign up first.' },
+      { status: 404 }
+    )
   }
 
-  // Look up user by email
-  const { data: targetUser } = await supabase
-    .from("users")
-    .select("id")
-    .eq("email", body.email.toLowerCase().trim())
-    .single();
+  const clerkUser = users.data[0]
 
-  if (!targetUser) {
-    return new NextResponse(
-      "No user found with that email. They need to sign up first.",
-      { status: 404 },
-    );
-  }
+  const supabase = createServerSupabaseClient()
 
-  // Check if already a member
-  const { data: existing } = await supabase
-    .from("workspace_members")
-    .select("user_id")
-    .eq("workspace_id", body.workspace_id)
-    .eq("user_id", targetUser.id)
-    .single();
+  // Upsert user in case webhook missed them
+  await supabase.from('users').upsert({
+    id: clerkUser.id,
+    email: clerkUser.emailAddresses[0].emailAddress,
+    full_name: `${clerkUser.firstName ?? ''} ${clerkUser.lastName ?? ''}`.trim(),
+    avatar_url: clerkUser.imageUrl,
+  }, { onConflict: 'id' })
 
-  if (existing) {
-    return new NextResponse("User is already a member of this workspace", {
-      status: 409,
-    });
-  }
+  // Add to workspace
+  const { error } = await supabase.from('workspace_members').insert({
+    workspace_id: workspaceId,
+    user_id: clerkUser.id,
+    role: role ?? 'member',
+  })
 
-  const { error } = await supabase.from("workspace_members").insert({
-    workspace_id: body.workspace_id,
-    user_id: targetUser.id,
-    role: "member",
-  });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  if (error) return new NextResponse(error.message, { status: 500 });
+  // ✅ Fetch workspace name for the notification message
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('name')
+    .eq('id', workspaceId)
+    .single()
 
-  await supabase.from("notifications").insert({
-    user_id: targetUser.id,
-    message: `You've been added to a workspace!`,
-    type: "invite",
-    link: `/workspace/${body.workspace_id}`,
+  // ✅ Insert notification for the invited user
+  await supabase.from('notifications').insert({
+    user_id: clerkUser.id,
+    workspace_id: workspaceId,
+    type: 'workspace_invite',
+    message: `You've been added to workspace "${workspace?.name ?? 'a workspace'}"`,
     read: false,
-  });
+  })
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true })
 }
