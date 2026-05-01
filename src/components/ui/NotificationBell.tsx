@@ -5,6 +5,86 @@ import { Bell, X, Check } from "lucide-react";
 import { useWorkspaceStore } from "@/store/workspace";
 import { formatRelativeTime } from "@/lib/utils";
 import { useRouter } from "next/navigation";
+import { Notification } from "@/types";
+
+function InviteActions({ notif }: { notif: Notification }) {
+  const [loading, setLoading] = useState<"accepted" | "declined" | null>(null);
+  const updateNotification = useWorkspaceStore((s) => s.updateNotification);
+  const router = useRouter();
+
+  async function respond(action: "accepted" | "declined") {
+    setLoading(action);
+    const res = await fetch("/api/workspace/invite/respond", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationId: notif.id, action }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      updateNotification(notif.id, { status: action, read: true });
+      if (action === "accepted" && notif.workspace_id) {
+        router.push(`/workspace/${notif.workspace_id}`);
+      }
+    } else {
+      alert(data.error ?? "Something went wrong");
+    }
+    setLoading(null);
+  }
+
+  if (notif.status === "accepted") {
+    return (
+      <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--success, #22c55e)" }}>
+        ✓ Joined workspace
+      </p>
+    );
+  }
+
+  if (notif.status === "declined") {
+    return (
+      <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+        Declined
+      </p>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 6, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => respond("accepted")}
+        disabled={!!loading}
+        style={{
+          padding: "4px 12px",
+          borderRadius: 6,
+          border: "none",
+          background: "var(--accent)",
+          color: "#fff",
+          fontSize: 12,
+          fontWeight: 500,
+          cursor: loading ? "not-allowed" : "pointer",
+          opacity: loading ? 0.7 : 1,
+        }}
+      >
+        {loading === "accepted" ? "Joining…" : "Accept"}
+      </button>
+      <button
+        onClick={() => respond("declined")}
+        disabled={!!loading}
+        style={{
+          padding: "4px 12px",
+          borderRadius: 6,
+          border: "1px solid var(--border-accent)",
+          background: "transparent",
+          color: "var(--text-secondary)",
+          fontSize: 12,
+          cursor: loading ? "not-allowed" : "pointer",
+          opacity: loading ? 0.7 : 1,
+        }}
+      >
+        {loading === "declined" ? "Declining…" : "Decline"}
+      </button>
+    </div>
+  );
+}
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -25,15 +105,16 @@ export function NotificationBell() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const handleClick = async (id: string, link?: string | null) => {
-    markNotificationRead(id);
+  const handleClick = async (n: Notification) => {
+    if (n.type === "workspace_invite") return;
+    markNotificationRead(n.id);
     await fetch("/api/notification", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id: n.id }),
     });
-    if (link) {
-      router.push(link);
+    if (n.link) {
+      router.push(n.link);
       setOpen(false);
     }
   };
@@ -49,7 +130,7 @@ export function NotificationBell() {
 
   return (
     <div style={{ position: "relative" }} ref={panelRef}>
-      {/* ── Bell button ── */}
+      {/* Bell button */}
       <button
         onClick={() => setOpen((v) => !v)}
         title="Notifications"
@@ -58,8 +139,6 @@ export function NotificationBell() {
           background: open ? "var(--bg-overlay)" : "none",
           border: "none",
           cursor: "pointer",
-          /* FIX: was --text-muted (#4a4f65) — near-invisible on dark bg.
-             Now uses --text-secondary (#8a8fa8) as the resting state. */
           color: open ? "var(--text-primary)" : "var(--text-secondary)",
           display: "flex",
           alignItems: "center",
@@ -79,9 +158,6 @@ export function NotificationBell() {
         }}
       >
         <Bell size={17} />
-
-        {/* FIX: badge moved outside the icon area (top:-6, right:-6)
-            so it doesn't overlap, and size increased to 18px for readability */}
         {unread > 0 && (
           <span
             style={{
@@ -108,14 +184,15 @@ export function NotificationBell() {
         )}
       </button>
 
-      {/* ── Dropdown panel ── */}
+      {/* Dropdown panel */}
       {open && (
         <div
+          ref={panelRef}
           style={{
-            position: "absolute",
-            right: 0,
-            top: "calc(100% + 8px)",
-            width: 360,
+            position: "fixed",           // ✅ fixed so it doesn't overflow parent
+            right: 8,                    // ✅ 8px from screen edge
+            top: 48,                     // ✅ just below topbar
+            width: "min(360px, calc(100vw - 16px))",  // ✅ never wider than screen
             background: "var(--bg-surface)",
             border: "1px solid var(--border-accent)",
             borderRadius: "var(--radius-lg)",
@@ -134,14 +211,7 @@ export function NotificationBell() {
               justifyContent: "space-between",
             }}
           >
-            <span
-              style={{
-                fontWeight: 700,
-                fontSize: 14,
-                fontFamily: "var(--font-display)",
-                color: "var(--text-primary)",
-              }}
-            >
+            <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>
               Notifications
             </span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -160,14 +230,9 @@ export function NotificationBell() {
                     fontSize: 12,
                     padding: "3px 8px",
                     borderRadius: 4,
-                    transition: "color 0.15s",
                   }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.color = "var(--accent)")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.color = "var(--text-secondary)")
-                  }
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
                 >
                   <Check size={12} /> All read
                 </button>
@@ -204,9 +269,9 @@ export function NotificationBell() {
               </div>
             ) : (
               notifications.map((n) => (
-                <button
+                <div
                   key={n.id}
-                  onClick={() => handleClick(n.id, n.link)}
+                  onClick={() => handleClick(n)}
                   style={{
                     width: "100%",
                     display: "flex",
@@ -214,21 +279,17 @@ export function NotificationBell() {
                     gap: 10,
                     padding: "12px 16px",
                     background: n.read ? "none" : "var(--accent-soft)",
-                    border: "none",
-                    cursor: n.link ? "pointer" : "default",
-                    textAlign: "left",
-                    fontFamily: "inherit",
                     borderBottom: "1px solid var(--border)",
+                    cursor: n.type === "workspace_invite" ? "default" : n.link ? "pointer" : "default",
                     transition: "background 0.1s",
+                    boxSizing: "border-box",
                   }}
                   onMouseEnter={(e) => {
-                    if (n.link)
+                    if (n.link && n.type !== "workspace_invite")
                       e.currentTarget.style.background = "var(--bg-hover)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = n.read
-                      ? "none"
-                      : "var(--accent-soft)";
+                    e.currentTarget.style.background = n.read ? "none" : "var(--accent-soft)";
                   }}
                 >
                   {/* Unread dot */}
@@ -255,17 +316,16 @@ export function NotificationBell() {
                     >
                       {n.message}
                     </p>
-                    <p
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-muted)",
-                        margin: "3px 0 0",
-                      }}
-                    >
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "3px 0 0" }}>
                       {formatRelativeTime(n.created_at)}
                     </p>
+
+                    {/* ✅ Accept/Decline for invite notifications */}
+                    {n.type === "workspace_invite" && (
+                      <InviteActions notif={n} />
+                    )}
                   </div>
-                </button>
+                </div>
               ))
             )}
           </div>

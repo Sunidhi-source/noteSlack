@@ -47,7 +47,17 @@ export interface Message {
   // joined via channels relation in search
   channels?: Pick<Channel, "name"> | null;
 }
-
+export interface Notification {
+  id: string;
+  user_id: string;
+  message: string;
+  read: boolean;
+  link?: string | null;
+  type: string;
+  created_at: string;
+  workspace_id?: string | null;   // ✅ add
+  status?: 'pending' | 'accepted' | 'declined' | null;  // ✅ add
+}
 export interface Document {
   id: string;
   workspace_id: string;

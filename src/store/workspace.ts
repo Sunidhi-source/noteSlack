@@ -15,7 +15,7 @@ interface WorkspaceState {
   members: User[];
   dmConversations: DmConversation[];
   notifications: Notification[];
-  unreadCounts: Record<string, number>; // channelId → count
+  unreadCounts: Record<string, number>;
 
   // Setters
   setCurrentWorkspace: (workspace: Workspace | null) => void;
@@ -31,6 +31,7 @@ interface WorkspaceState {
   addMember: (member: User) => void;
   updateDocument: (id: string, updates: Partial<Document>) => void;
   addNotification: (n: Notification) => void;
+  updateNotification: (id: string, updates: Partial<Notification>) => void; // ✅ added
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
 
@@ -67,6 +68,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     })),
   addNotification: (n) =>
     set((s) => ({ notifications: [n, ...s.notifications] })),
+
+  // ✅ added
+  updateNotification: (id, updates) =>
+    set((s) => ({
+      notifications: s.notifications.map((n) =>
+        n.id === id ? { ...n, ...updates } : n,
+      ),
+    })),
+
   markNotificationRead: (id) =>
     set((s) => ({
       notifications: s.notifications.map((n) =>
