@@ -77,16 +77,6 @@ export interface PresenceUser {
   color: string;
 }
 
-export interface Notification {
-  id: string;
-  user_id: string;
-  message: string;
-  read: boolean;
-  link?: string | null;
-  type: string;
-  created_at: string;
-}
-
 export interface TypingUser {
   user_id: string;
   name: string | null;

@@ -203,6 +203,15 @@ vercel deploy
 
 Add all env vars to your Vercel project settings. Update your Clerk webhook URL to your production domain.
 
+Required env vars:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+- `CLERK_WEBHOOK_SECRET`
+- `GEMINI_API_KEY` (for AI writing assistant — free at aistudio.google.com)
+
 ### Supabase Realtime
 
 Ensure the tables `messages`, `reactions`, `notifications`, `dm_messages`, and `channel_read_state` are added to the `supabase_realtime` publication (the schema.sql does this automatically).
