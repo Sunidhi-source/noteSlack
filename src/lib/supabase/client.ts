@@ -47,18 +47,15 @@ function getSupabaseClient(): SupabaseClient {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
-      detectSessionFromUrl: false,
+      detectSessionInUrl: false,
     },
   });
 
   return supabaseInstance;
 }
-
 export function useSupabaseClient(): SupabaseClient {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
-  // Keep module-level refs in sync with latest auth state
-  // without ever recreating the client
   currentGetToken = () => getToken({ template: "supabase" });
   currentIsLoaded = isLoaded;
   currentIsSignedIn = isSignedIn ?? false;
