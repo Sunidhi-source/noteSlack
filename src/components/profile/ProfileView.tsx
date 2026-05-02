@@ -10,8 +10,13 @@ import {
   Calendar,
   Shield,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
-import { generateUserColor, getInitials, formatRelativeTime } from "@/lib/utils";
+import {
+  generateUserColor,
+  getInitials,
+  formatRelativeTime,
+} from "@/lib/utils";
 import { usePresenceStatus } from "@/hooks/usePresenceStatus";
 
 interface ProfileData {
@@ -29,7 +34,10 @@ interface Props {
   userId: string;
 }
 
-const ROLE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+const ROLE_LABELS: Record<
+  string,
+  { label: string; color: string; bg: string }
+> = {
   owner: {
     label: "Owner",
     color: "#f5a623",
@@ -54,24 +62,28 @@ export function ProfileView({ workspaceId, userId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Reuse the existing presence hook to show online/offline
   const isOnline = usePresenceStatus(userId);
-
   const isOwnProfile = currentUser?.id === userId;
 
   useEffect(() => {
+    if (!userId || !workspaceId) return;
+
     setLoading(true);
     setError(null);
+
     fetch(`/api/profile/${userId}?workspaceId=${workspaceId}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Could not load profile");
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.error ?? `Failed to load profile (${r.status})`);
+        }
         return r.json();
       })
-      .then((data) => {
+      .then((data: ProfileData) => {
         setProfile(data);
         setLoading(false);
       })
-      .catch((e) => {
+      .catch((e: Error) => {
         setError(e.message);
         setLoading(false);
       });
@@ -96,6 +108,12 @@ export function ProfileView({ workspaceId, userId }: Props) {
             animation: "spin 1s linear infinite",
           }}
         />
+        <style>{`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
@@ -114,7 +132,15 @@ export function ProfileView({ workspaceId, userId }: Props) {
           gap: 12,
         }}
       >
-        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+        <AlertCircle size={32} style={{ color: "var(--text-muted)" }} />
+        <p
+          style={{
+            color: "var(--text-muted)",
+            fontSize: 14,
+            textAlign: "center",
+            maxWidth: 320,
+          }}
+        >
           {error ?? "Profile not found"}
         </p>
         <button
@@ -173,14 +199,7 @@ export function ProfileView({ workspaceId, userId }: Props) {
             fontSize: 13,
             padding: "4px 8px",
             borderRadius: "var(--radius-sm)",
-            transition: "color 0.15s",
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.color = "var(--text-primary)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.color = "var(--text-secondary)")
-          }
         >
           <ArrowLeft size={15} />
           Back
@@ -198,13 +217,7 @@ export function ProfileView({ workspaceId, userId }: Props) {
       </div>
 
       {/* Content */}
-      <div
-        style={{
-          maxWidth: 640,
-          margin: "40px auto",
-          padding: "0 24px",
-        }}
-      >
+      <div style={{ maxWidth: 640, margin: "40px auto", padding: "0 24px" }}>
         {/* Avatar + name card */}
         <div
           style={{
@@ -218,7 +231,6 @@ export function ProfileView({ workspaceId, userId }: Props) {
             marginBottom: 16,
           }}
         >
-          {/* Avatar */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             {profile.avatar_url ? (
               <img
@@ -244,13 +256,11 @@ export function ProfileView({ workspaceId, userId }: Props) {
                   fontSize: 28,
                   fontWeight: 700,
                   color: "#fff",
-                  fontFamily: "var(--font-display)",
                 }}
               >
                 {initials}
               </div>
             )}
-            {/* Presence dot */}
             <span
               style={{
                 position: "absolute",
@@ -265,7 +275,6 @@ export function ProfileView({ workspaceId, userId }: Props) {
             />
           </div>
 
-          {/* Name + role */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
@@ -278,7 +287,6 @@ export function ProfileView({ workspaceId, userId }: Props) {
             >
               <h1
                 style={{
-                  fontFamily: "var(--font-display)",
                   fontSize: 22,
                   fontWeight: 700,
                   color: "var(--text-primary)",
@@ -307,7 +315,6 @@ export function ProfileView({ workspaceId, userId }: Props) {
               )}
             </div>
 
-            {/* Online status */}
             <p
               style={{
                 fontSize: 13,
@@ -324,13 +331,11 @@ export function ProfileView({ workspaceId, userId }: Props) {
                   height: 7,
                   borderRadius: "50%",
                   background: isOnline ? "var(--success)" : "var(--text-muted)",
-                  display: "inline-block",
                 }}
               />
               {isOnline ? "Active now" : "Away"}
             </p>
 
-            {/* Send DM button — only show if viewing someone else's profile */}
             {!isOwnProfile && (
               <button
                 onClick={() =>
@@ -348,31 +353,11 @@ export function ProfileView({ workspaceId, userId }: Props) {
                   display: "flex",
                   alignItems: "center",
                   gap: 7,
-                  fontFamily: "inherit",
-                  transition: "background 0.15s",
                 }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "var(--accent-hover)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "var(--accent)")
-                }
               >
                 <MessageCircle size={14} />
                 Send message
               </button>
-            )}
-
-            {isOwnProfile && (
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  fontStyle: "italic",
-                }}
-              >
-                This is your profile
-              </p>
             )}
           </div>
         </div>
@@ -397,7 +382,6 @@ export function ProfileView({ workspaceId, userId }: Props) {
                 fontSize: 11,
                 fontWeight: 700,
                 color: "var(--text-muted)",
-                letterSpacing: "0.07em",
                 textTransform: "uppercase",
                 margin: 0,
               }}
@@ -411,7 +395,6 @@ export function ProfileView({ workspaceId, userId }: Props) {
             label="Email"
             value={profile.email}
           />
-
           <DetailRow
             icon={<Calendar size={14} />}
             label="Joined workspace"
@@ -421,7 +404,6 @@ export function ProfileView({ workspaceId, userId }: Props) {
                 : "Unknown"
             }
           />
-
           <DetailRow
             icon={<Shield size={14} />}
             label="Role"
@@ -460,9 +442,7 @@ function DetailRow({
       }}
     >
       <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>{icon}</span>
-      <span
-        style={{ fontSize: 13, color: "var(--text-muted)", minWidth: 120 }}
-      >
+      <span style={{ fontSize: 13, color: "var(--text-muted)", minWidth: 120 }}>
         {label}
       </span>
       <span

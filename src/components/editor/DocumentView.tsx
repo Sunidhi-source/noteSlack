@@ -8,7 +8,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import * as Y from "yjs";
 import SupabaseProvider from "y-supabase";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
 import {
   Bold,
   Italic,
@@ -41,14 +41,14 @@ export function DocumentView({ workspaceId, docId }: Props) {
   useWorkspace(workspaceId);
   const supabase = useSupabaseClient();
   const { user } = useUser();
+  const { getToken } = useAuth();
   const { documents, updateDocument } = useWorkspaceStore();
   const { activeUsers, updateCursor } = usePresence(docId);
 
   const doc = documents.find((d) => d.id === docId);
-  const [title, setTitle] = useState(doc?.title ?? "Untitled");
+  const [title, setTitle] = useState(doc?.title ?? "");
   const [saving, setSaving] = useState(false);
   const [collab, setCollab] = useState(false);
-  // ✅ NEW: AI assistant state
   const [showAI, setShowAI] = useState(false);
   const [selectedText, setSelectedText] = useState("");
 
@@ -57,24 +57,33 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !supabase) return;
     providerRef.current?.destroy();
     ydocRef.current?.destroy();
 
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
-    const provider = new SupabaseProvider(ydoc, supabase, {
-      channel: `doc-crdt-${docId}`,
-      id: docId,
-      tableName: "documents",
-      columnName: "content",
-    });
-    providerRef.current = provider;
-    provider.on("synced", () => setCollab(true));
+
+    (async () => {
+      try {
+        const token = await getToken({ template: "supabase" });
+        const provider = new SupabaseProvider(ydoc, supabase, {
+          channel: `doc-crdt-${docId}`,
+          id: docId,
+          tableName: "documents",
+          columnName: "content",
+          ...(token && { supabaseJwt: token }),
+        });
+        providerRef.current = provider;
+        provider.on("synced", () => setCollab(true));
+      } catch (err) {
+        console.error("SupabaseProvider error:", err);
+      }
+    })();
 
     return () => {
-      provider.destroy();
-      ydoc.destroy();
+      providerRef.current?.destroy();
+      ydocRef.current?.destroy();
       ydocRef.current = null;
       providerRef.current = null;
       setCollab(false);
@@ -84,7 +93,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
 
   useEffect(() => {
     if (doc) {
-      setTitle(doc.title);
+      setTitle(doc.title ?? "");
       return;
     }
     supabase
@@ -95,7 +104,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
       .then(({ data }) => {
         if (data) {
           updateDocument(docId, data as Document);
-          setTitle(data.title);
+          setTitle(data.title ?? "");
         }
       });
   }, [docId, doc, supabase, updateDocument]);
@@ -115,6 +124,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
 
   const editor = useEditor(
     {
+      immediatelyRender: false,
       extensions: [
         StarterKit.configure({}),
         Placeholder.configure({
@@ -143,7 +153,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
     [collab],
   );
 
-  // ✅ NEW: Capture selected text for AI assistant
   const handleEditorMouseUp = useCallback(() => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? "";
@@ -156,7 +165,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
     saveTimer.current = setTimeout(() => saveTitle(newTitle), 1500);
   };
 
-  // ✅ NEW: Insert AI result into editor at current position
   const handleInsertAIResult = useCallback(
     (text: string) => {
       if (!editor) return;
@@ -276,7 +284,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
           <Quote size={14} />
         </ToolbarBtn>
 
-        {/* ✅ NEW: AI Assistant button */}
         <ToolbarDivider />
         <button
           onClick={() => setShowAI(true)}
@@ -412,7 +419,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
         <div style={{ maxWidth: 860, margin: "0 auto", padding: "48px 64px" }}>
           <input
             key={docId}
-            value={title}
+            value={title ?? ""}
             onChange={(e) => handleTitleChange(e.target.value)}
             style={{
               fontSize: 40,
@@ -432,7 +439,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
         </div>
       </div>
 
-      {/* ✅ NEW: AI Assistant modal */}
+      {/* AI Assistant modal */}
       {showAI && (
         <AIDocumentAssistant
           selectedText={selectedText}
