@@ -1,15 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Sparkles,
-  Wand2,
-  FileText,
-  ArrowRight,
-  Loader2,
-  X,
-  Check,
-} from "lucide-react";
+import { Sparkles, Wand2, Loader2, X, Check, Languages } from "lucide-react";
 
 interface Props {
   selectedText: string;
@@ -19,12 +11,17 @@ interface Props {
 
 type Action = "improve" | "summarize" | "continue" | "translate";
 
-const ACTIONS: { id: Action; label: string; icon: string; desc: string }[] = [
+const NON_TRANSLATE_ACTIONS: {
+  id: Action;
+  label: string;
+  icon: string;
+  desc: string;
+}[] = [
   {
     id: "improve",
     label: "Improve Writing",
     icon: "✨",
-    desc: "Make it clearer and more professional",
+    desc: "Clearer & more professional",
   },
   {
     id: "summarize",
@@ -38,12 +35,24 @@ const ACTIONS: { id: Action; label: string; icon: string; desc: string }[] = [
     icon: "➡️",
     desc: "Add more in the same style",
   },
-  {
-    id: "translate",
-    label: "Translate",
-    icon: "🌍",
-    desc: "English ↔ Spanish",
-  },
+];
+
+const LANGUAGES = [
+  "Spanish",
+  "French",
+  "German",
+  "Hindi",
+  "Japanese",
+  "Arabic",
+  "Portuguese",
+  "Chinese",
+  "Italian",
+  "Korean",
+  "Russian",
+  "Turkish",
+  "Dutch",
+  "Polish",
+  "Swedish",
 ];
 
 export function AIDocumentAssistant({
@@ -55,6 +64,7 @@ export function AIDocumentAssistant({
   const [result, setResult] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [targetLang, setTargetLang] = useState("Spanish");
 
   const runAction = async (action: Action) => {
     if (!selectedText.trim()) {
@@ -70,7 +80,7 @@ export function AIDocumentAssistant({
       const res = await fetch("/api/ai/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: selectedText, action }),
+        body: JSON.stringify({ text: selectedText, action, targetLang }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -84,6 +94,9 @@ export function AIDocumentAssistant({
 
   return (
     <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
         position: "fixed",
         inset: 0,
@@ -91,59 +104,62 @@ export function AIDocumentAssistant({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0,0,0,0.4)",
-        backdropFilter: "blur(4px)",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        background: "rgba(0,0,0,0.5)",
+        backdropFilter: "blur(6px)",
       }}
     >
       <div
         style={{
           background: "var(--bg-surface)",
-          borderRadius: 16,
+          borderRadius: 20,
           border: "1px solid var(--border)",
-          width: "min(600px, 92vw)",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
+          width: "min(620px, 93vw)",
+          boxShadow: "0 32px 100px rgba(0,0,0,0.4)",
           overflow: "hidden",
+          animation: "slideUp 0.2s ease",
         }}
       >
         {/* Header */}
         <div
           style={{
-            padding: "16px 20px",
+            padding: "18px 22px",
             borderBottom: "1px solid var(--border)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: 12,
+            background:
+              "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(167,139,250,0.04))",
           }}
         >
           <div
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
+              width: 38,
+              height: 38,
+              borderRadius: 10,
               background: "linear-gradient(135deg, var(--accent), #a78bfa)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              boxShadow: "0 4px 12px rgba(139,92,246,0.3)",
             }}
           >
-            <Sparkles size={16} color="#fff" />
+            <Sparkles size={18} color="#fff" />
           </div>
           <div>
             <p
               style={{
                 fontWeight: 700,
-                fontSize: 14,
+                fontSize: 15,
                 color: "var(--text-primary)",
               }}
             >
               AI Writing Assistant
             </p>
-            <p style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            <p
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}
+            >
               {selectedText.length > 0
-                ? `Working with ${selectedText.length} characters selected`
+                ? `✦ ${selectedText.length} characters selected`
                 : "Select text in the document to use AI"}
             </p>
           </div>
@@ -151,16 +167,17 @@ export function AIDocumentAssistant({
             onClick={onClose}
             style={{
               marginLeft: "auto",
-              background: "none",
-              border: "none",
+              background: "var(--bg-overlay)",
+              border: "1px solid var(--border)",
               cursor: "pointer",
               color: "var(--text-muted)",
-              borderRadius: 6,
-              padding: 4,
+              borderRadius: 8,
+              padding: "6px",
               display: "flex",
+              transition: "all 0.15s",
             }}
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
@@ -168,19 +185,20 @@ export function AIDocumentAssistant({
         {selectedText && (
           <div
             style={{
-              margin: "12px 20px 0",
+              margin: "14px 20px 0",
               background: "var(--bg-overlay)",
-              borderRadius: 8,
-              padding: "10px 12px",
+              borderRadius: 10,
+              padding: "10px 14px",
               borderLeft: "3px solid var(--accent)",
             }}
           >
             <p
               style={{
-                fontSize: 11,
+                fontSize: 10,
                 color: "var(--text-muted)",
                 marginBottom: 4,
-                fontWeight: 600,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
               }}
             >
               SELECTED TEXT
@@ -189,8 +207,8 @@ export function AIDocumentAssistant({
               style={{
                 fontSize: 13,
                 color: "var(--text-secondary)",
-                lineHeight: 1.5,
-                maxHeight: 80,
+                lineHeight: 1.6,
+                maxHeight: 72,
                 overflow: "hidden",
               }}
             >
@@ -203,30 +221,31 @@ export function AIDocumentAssistant({
         {/* Action buttons */}
         <div
           style={{
-            padding: "12px 20px",
+            padding: "14px 20px",
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
-            gap: 8,
+            gap: 10,
           }}
         >
-          {ACTIONS.map((a) => (
+          {/* Improve, Summarize, Continue */}
+          {NON_TRANSLATE_ACTIONS.map((a) => (
             <button
               key={a.id}
               onClick={() => runAction(a.id)}
               disabled={loading || !selectedText.trim()}
               style={{
                 background:
-                  activeAction === a.id && loading
-                    ? "var(--accent-soft)"
+                  activeAction === a.id && (loading || result)
+                    ? "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(167,139,250,0.06))"
                     : "var(--bg-overlay)",
                 border: `1px solid ${activeAction === a.id ? "var(--accent)" : "var(--border)"}`,
-                borderRadius: 10,
-                padding: "10px 12px",
+                borderRadius: 12,
+                padding: "12px 14px",
                 cursor:
                   loading || !selectedText.trim() ? "not-allowed" : "pointer",
                 textAlign: "left",
-                opacity: loading || !selectedText.trim() ? 0.6 : 1,
-                transition: "all 0.15s",
+                opacity: loading && activeAction !== a.id ? 0.5 : 1,
+                transition: "all 0.2s",
               }}
               onMouseEnter={(e) => {
                 if (!loading && selectedText.trim())
@@ -243,8 +262,8 @@ export function AIDocumentAssistant({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
-                  marginBottom: 2,
+                  gap: 7,
+                  marginBottom: 4,
                 }}
               >
                 <span style={{ fontSize: 16 }}>{a.icon}</span>
@@ -259,7 +278,7 @@ export function AIDocumentAssistant({
                 </span>
                 {loading && activeAction === a.id && (
                   <Loader2
-                    size={12}
+                    size={13}
                     style={{
                       marginLeft: "auto",
                       color: "var(--accent)",
@@ -273,19 +292,127 @@ export function AIDocumentAssistant({
               </p>
             </button>
           ))}
+
+          {/* Translate card — div to avoid nested button hydration error */}
+          <div
+            style={{
+              background:
+                activeAction === "translate" && (loading || result)
+                  ? "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(167,139,250,0.06))"
+                  : "var(--bg-overlay)",
+              border: `1px solid ${activeAction === "translate" ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: 12,
+              padding: "12px 14px",
+              opacity: loading && activeAction !== "translate" ? 0.5 : 1,
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (!loading && selectedText.trim())
+                (e.currentTarget as HTMLElement).style.borderColor =
+                  "var(--accent)";
+            }}
+            onMouseLeave={(e) => {
+              if (activeAction !== "translate")
+                (e.currentTarget as HTMLElement).style.borderColor =
+                  "var(--border)";
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ fontSize: 16 }}>🌍</span>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--text-primary)",
+                }}
+              >
+                Translate
+              </span>
+              {loading && activeAction === "translate" && (
+                <Loader2
+                  size={13}
+                  style={{
+                    marginLeft: "auto",
+                    color: "var(--accent)",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <select
+                value={targetLang}
+                onChange={(e) => setTargetLang(e.target.value)}
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 7,
+                  padding: "5px 8px",
+                  fontSize: 12,
+                  color: "var(--text-primary)",
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+              >
+                {LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>
+                    {lang}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => runAction("translate")}
+                disabled={loading || !selectedText.trim()}
+                style={{
+                  background: "linear-gradient(135deg, var(--accent), #a78bfa)",
+                  border: "none",
+                  borderRadius: 7,
+                  padding: "5px 12px",
+                  cursor:
+                    loading || !selectedText.trim() ? "not-allowed" : "pointer",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 2px 8px rgba(139,92,246,0.3)",
+                }}
+              >
+                <Languages size={11} /> Go
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Error */}
         {error && (
           <div
             style={{
-              margin: "0 20px 12px",
-              background: "#fee2e2",
-              borderRadius: 8,
-              padding: "8px 12px",
+              margin: "0 20px 14px",
+              background: "rgba(220,38,38,0.08)",
+              border: "1px solid rgba(220,38,38,0.2)",
+              borderRadius: 10,
+              padding: "10px 14px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
             }}
           >
-            <p style={{ fontSize: 12, color: "#dc2626" }}>{error}</p>
+            <span style={{ fontSize: 14 }}>⚠️</span>
+            <p style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>
+              {error}
+            </p>
           </div>
         )}
 
@@ -293,50 +420,69 @@ export function AIDocumentAssistant({
         {result && (
           <div
             style={{
-              margin: "0 20px 16px",
+              margin: "0 20px 18px",
               border: "1px solid var(--accent)",
-              borderRadius: 10,
+              borderRadius: 12,
               overflow: "hidden",
+              boxShadow: "0 4px 20px rgba(139,92,246,0.1)",
+              animation: "fadeIn 0.3s ease",
             }}
           >
             <div
               style={{
-                background: "var(--accent-soft)",
-                padding: "8px 12px",
+                background:
+                  "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(167,139,250,0.08))",
+                padding: "9px 14px",
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 7,
               }}
             >
-              <Wand2 size={12} style={{ color: "var(--accent)" }} />
+              <Wand2 size={13} style={{ color: "var(--accent)" }} />
               <span
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
                   color: "var(--accent)",
+                  letterSpacing: "0.06em",
                 }}
               >
                 AI RESULT
               </span>
+              <span
+                style={{
+                  marginLeft: "auto",
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  background: "var(--bg-overlay)",
+                  padding: "2px 8px",
+                  borderRadius: 20,
+                }}
+              >
+                {activeAction}
+              </span>
             </div>
-            <div style={{ padding: "12px", background: "var(--bg-overlay)" }}>
+
+            <div style={{ padding: "14px", background: "var(--bg-overlay)" }}>
               <p
                 style={{
                   fontSize: 13,
                   color: "var(--text-primary)",
-                  lineHeight: 1.6,
+                  lineHeight: 1.7,
                   whiteSpace: "pre-wrap",
                 }}
               >
                 {result}
               </p>
             </div>
+
             <div
               style={{
-                padding: "8px 12px",
+                padding: "10px 14px",
                 borderTop: "1px solid var(--border)",
                 display: "flex",
                 gap: 8,
+                background: "var(--bg-surface)",
               }}
             >
               <button
@@ -346,10 +492,10 @@ export function AIDocumentAssistant({
                 }}
                 style={{
                   flex: 1,
-                  background: "var(--accent)",
+                  background: "linear-gradient(135deg, var(--accent), #a78bfa)",
                   border: "none",
-                  borderRadius: 8,
-                  padding: "8px",
+                  borderRadius: 9,
+                  padding: "9px",
                   cursor: "pointer",
                   color: "#fff",
                   fontSize: 12,
@@ -357,21 +503,38 @@ export function AIDocumentAssistant({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 5,
+                  gap: 6,
+                  boxShadow: "0 4px 12px rgba(139,92,246,0.3)",
+                  transition: "opacity 0.15s",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
               >
-                <Check size={13} /> Insert into Document
+                <Check size={14} /> Insert into Document
               </button>
               <button
                 onClick={() => navigator.clipboard.writeText(result)}
                 style={{
-                  padding: "8px 14px",
+                  padding: "9px 16px",
                   background: "var(--bg-overlay)",
                   border: "1px solid var(--border)",
-                  borderRadius: 8,
+                  borderRadius: 9,
                   cursor: "pointer",
                   fontSize: 12,
                   color: "var(--text-secondary)",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor =
+                    "var(--accent)";
+                  (e.currentTarget as HTMLElement).style.color =
+                    "var(--accent)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor =
+                    "var(--border)";
+                  (e.currentTarget as HTMLElement).style.color =
+                    "var(--text-secondary)";
                 }}
               >
                 Copy
@@ -380,7 +543,18 @@ export function AIDocumentAssistant({
           </div>
         )}
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
