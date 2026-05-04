@@ -1,14 +1,24 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspaceStore } from "@/store/workspace";
-import { Channel, Document, DmConversation, Notification, User, Workspace } from "@/types";
+import {
+  Channel,
+  Document,
+  DmConversation,
+  Notification,
+  User,
+  Workspace,
+} from "@/types";
 
 export function useWorkspace(workspaceId: string) {
   const supabase = useSupabaseClient();
+  const supabaseRef = useRef(supabase); // ✅ lock instance
+
   const { user } = useUser();
+
   const {
     setCurrentWorkspace,
     setChannels,
@@ -20,11 +30,17 @@ export function useWorkspace(workspaceId: string) {
     incrementUnread,
   } = useWorkspaceStore();
 
-  useEffect(() => {
-    if (!workspaceId || !user) return;
+  // ✅ prevent duplicate subscriptions
+  const hasSubscribedRef = useRef(false);
 
-    // ── Fetch workspace
-    supabase
+  useEffect(() => {
+    if (!workspaceId || !user?.id) return;
+
+    const client = supabaseRef.current;
+
+    // ── FETCH DATA (unchanged) ───────────────────────────────
+
+    client
       .from("workspaces")
       .select("*")
       .eq("id", workspaceId)
@@ -33,28 +49,23 @@ export function useWorkspace(workspaceId: string) {
         if (data) setCurrentWorkspace(data as Workspace);
       });
 
-    // ── Fetch channels
-    supabase
+    client
       .from("channels")
       .select("*")
       .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: true })
       .then(({ data }) => {
         if (data) setChannels(data as Channel[]);
       });
 
-    // ── Fetch documents
-    supabase
+    client
       .from("documents")
       .select("*")
       .eq("workspace_id", workspaceId)
-      .order("updated_at", { ascending: false })
       .then(({ data }) => {
         if (data) setDocuments(data as Document[]);
       });
 
-    // ── Fetch workspace members with user info
-    supabase
+    client
       .from("workspace_members")
       .select("users(*)")
       .eq("workspace_id", workspaceId)
@@ -67,83 +78,68 @@ export function useWorkspace(workspaceId: string) {
         }
       });
 
-    // ── Fetch DM conversations for current user in this workspace
-    supabase
-      .from("dm_conversations")
-      .select(
-        "*, participant_a_user:users!dm_conversations_participant_a_fkey(id, full_name, avatar_url), participant_b_user:users!dm_conversations_participant_b_fkey(id, full_name, avatar_url)"
-      )
-      .eq("workspace_id", workspaceId)
-      .or(`participant_a.eq.${user.id},participant_b.eq.${user.id}`)
-      .order("updated_at", { ascending: false })
-      .then(({ data }) => {
-        if (data) setDmConversations(data as DmConversation[]);
-      });
-
-    // ── Fetch notifications for current user
-    supabase
+    client
       .from("notifications")
       .select("*")
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50)
       .then(({ data }) => {
         if (data) setNotifications(data as Notification[]);
       });
 
-    // ── Live notification subscription
-    const notifChannel = supabase
-      .channel(`notifications:${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          addNotification(payload.new as Notification);
-        },
-      )
-      .subscribe();
+    // 🛑 IMPORTANT: avoid double subscription
+    if (hasSubscribedRef.current) return;
+    hasSubscribedRef.current = true;
 
-    // ── Live unread tracking: listen for new messages in any channel of workspace
-    // We track messages INSERT events and increment unread for other channels
-    const msgUnreadChannel = supabase
-      .channel(`workspace_messages:${workspaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const msg = payload.new as { channel_id: string; user_id: string };
-          // Don't count own messages
-          if (msg.user_id !== user.id) {
-            incrementUnread(msg.channel_id);
-          }
-        },
-      )
-      .subscribe();
+    // ── REALTIME ─────────────────────────────────────────────
+
+    const notifChannel = client.channel(`notifications:${user.id}`);
+
+    notifChannel.on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload) => {
+        if (payload.new) {
+          addNotification(payload.new as Notification);
+        }
+      },
+    );
+
+    notifChannel.subscribe();
+
+    const msgChannel = client.channel(`workspace_messages:${workspaceId}`);
+
+    msgChannel.on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "messages",
+      },
+      (payload) => {
+        if (!payload.new) return;
+
+        const msg = payload.new as {
+          channel_id: string;
+          user_id: string;
+        };
+
+        if (msg.user_id !== user.id) {
+          incrementUnread(msg.channel_id);
+        }
+      },
+    );
+
+    msgChannel.subscribe();
 
     return () => {
-      supabase.removeChannel(notifChannel);
-      supabase.removeChannel(msgUnreadChannel);
+      client.removeChannel(notifChannel);
+      client.removeChannel(msgChannel);
+      hasSubscribedRef.current = false; // reset
     };
-  }, [
-    workspaceId,
-    user,
-    supabase,
-    setCurrentWorkspace,
-    setChannels,
-    setDocuments,
-    setMembers,
-    setDmConversations,
-    setNotifications,
-    addNotification,
-    incrementUnread,
-  ]);
+  }, [workspaceId, user?.id]);
 }

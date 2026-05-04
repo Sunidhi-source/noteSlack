@@ -46,7 +46,10 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const { activeUsers, updateCursor } = usePresence(docId);
 
   const doc = documents.find((d) => d.id === docId);
+
   const [title, setTitle] = useState(doc?.title ?? "");
+  const [originalTitle, setOriginalTitle] = useState(doc?.title ?? "");
+  const [hasUnsavedTitle, setHasUnsavedTitle] = useState(false);
   const [saving, setSaving] = useState(false);
   const [collab, setCollab] = useState(false);
   const [showAI, setShowAI] = useState(false);
@@ -56,6 +59,47 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const providerRef = useRef<SupabaseProvider | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Track whether we've done the first title sync for this docId
+  const titleSyncedForDoc = useRef<string | null>(null);
+
+  // Sync title from store/DB — only on first load per docId, never overwrite user edits
+  if (titleSyncedForDoc.current !== docId && doc?.title !== undefined) {
+    titleSyncedForDoc.current = docId;
+    // Direct assignment during render is fine for initialisation — no effect needed
+  }
+
+  // Reset unsaved flag when navigating to a different doc
+  useEffect(() => {
+    setHasUnsavedTitle(false);
+  }, [docId]);
+
+  // Fetch doc from DB if not in store, or sync title when doc first arrives
+  useEffect(() => {
+    if (doc) {
+      // Only update title if the user hasn't started editing
+      if (!hasUnsavedTitle) {
+        setTitle(doc.title ?? "");
+        setOriginalTitle(doc.title ?? "");
+      }
+      return;
+    }
+    // Doc not in store yet — fetch it
+    supabase
+      .from("documents")
+      .select("*")
+      .eq("id", docId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          updateDocument(docId, data as Document);
+          setTitle(data.title ?? "");
+          setOriginalTitle(data.title ?? "");
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId, doc?.id]);
+
+  // ── Setup Yjs + SupabaseProvider ──────────────────────────────
   useEffect(() => {
     if (!user || !supabase) return;
     providerRef.current?.destroy();
@@ -66,7 +110,9 @@ export function DocumentView({ workspaceId, docId }: Props) {
 
     (async () => {
       try {
-        const token = await getToken({ template: "supabase" });
+        const token = await getToken({ template: "supabase" }).catch(
+          () => null,
+        );
         const provider = new SupabaseProvider(ydoc, supabase, {
           channel: `doc-crdt-${docId}`,
           id: docId,
@@ -91,24 +137,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, user?.id]);
 
-  useEffect(() => {
-    if (doc) {
-      setTitle(doc.title ?? "");
-      return;
-    }
-    supabase
-      .from("documents")
-      .select("*")
-      .eq("id", docId)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          updateDocument(docId, data as Document);
-          setTitle(data.title ?? "");
-        }
-      });
-  }, [docId, doc, supabase, updateDocument]);
-
+  // ── Save title to DB ──────────────────────────────────────────
   const saveTitle = useCallback(
     async (newTitle: string) => {
       setSaving(true);
@@ -122,6 +151,41 @@ export function DocumentView({ workspaceId, docId }: Props) {
     [docId, supabase, updateDocument, user?.id],
   );
 
+  // ── Explicit Save button ──────────────────────────────────────
+  const handleSaveTitle = useCallback(async () => {
+    clearTimeout(saveTimer.current);
+    await saveTitle(title);
+    setOriginalTitle(title);
+    setHasUnsavedTitle(false);
+  }, [title, saveTitle]);
+
+  // ── Discard button ────────────────────────────────────────────
+  const handleDiscardTitle = useCallback(() => {
+    clearTimeout(saveTimer.current);
+    setTitle(originalTitle);
+    setHasUnsavedTitle(false);
+  }, [originalTitle]);
+
+  // ── Ctrl+S / Cmd+S ────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (hasUnsavedTitle) handleSaveTitle();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [hasUnsavedTitle, handleSaveTitle]);
+
+  // ── Title input change ────────────────────────────────────────
+  const handleTitleChange = (newTitle: string) => {
+    setTitle(newTitle);
+    setHasUnsavedTitle(true);
+    clearTimeout(saveTimer.current);
+  };
+
+  // ── Editor ────────────────────────────────────────────────────
   const editor = useEditor(
     {
       immediatelyRender: false,
@@ -158,12 +222,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
     const text = selection?.toString().trim() ?? "";
     setSelectedText(text);
   }, []);
-
-  const handleTitleChange = (newTitle: string) => {
-    setTitle(newTitle);
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => saveTitle(newTitle), 1500);
-  };
 
   const handleInsertAIResult = useCallback(
     (text: string) => {
@@ -304,7 +362,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
           <Sparkles size={13} /> AI Assist
         </button>
 
-        {/* Right side */}
+        {/* ── Right side ── */}
         <div
           style={{
             marginLeft: "auto",
@@ -313,11 +371,12 @@ export function DocumentView({ workspaceId, docId }: Props) {
             gap: 10,
           }}
         >
+          {/* Collaborator avatars */}
           {activeUsers.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <Users size={13} style={{ color: "var(--text-muted)" }} />
               <div style={{ display: "flex", marginLeft: 2 }}>
-                {activeUsers.slice(0, 4).map((u) => (
+                {activeUsers.slice(0, 4).map((u: PresenceUser) => (
                   <div
                     key={u.user_id}
                     title={u.name ?? "Collaborator"}
@@ -362,33 +421,70 @@ export function DocumentView({ workspaceId, docId }: Props) {
             </div>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              fontSize: 12,
-              color: "var(--text-muted)",
-            }}
-          >
-            {saving ? (
-              <>
-                <RotateCw
-                  size={12}
-                  style={{
-                    color: "var(--accent)",
-                    animation: "spin 1s linear infinite",
-                  }}
-                />{" "}
-                Saving…
-              </>
-            ) : (
-              <>
-                <CheckCircle2 size={12} style={{ color: "var(--success)" }} />{" "}
-                Saved
-              </>
-            )}
-          </div>
+          {/* Save / Discard — only when title has unsaved changes */}
+          {hasUnsavedTitle ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                onClick={handleDiscardTitle}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--text-secondary)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleSaveTitle}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontFamily: "inherit",
+                }}
+              >
+                Save
+              </button>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              {saving ? (
+                <>
+                  <RotateCw
+                    size={12}
+                    style={{
+                      color: "var(--accent)",
+                      animation: "spin 1s linear infinite",
+                    }}
+                  />{" "}
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={12} style={{ color: "var(--success)" }} />{" "}
+                  Saved
+                </>
+              )}
+            </div>
+          )}
 
           {!collab && (
             <span
@@ -406,13 +502,13 @@ export function DocumentView({ workspaceId, docId }: Props) {
         </div>
       </div>
 
-      {/* ── Editor ── */}
+      {/* ── Editor area ── */}
       <div
         style={{ flex: 1, overflowY: "auto", position: "relative" }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleEditorMouseUp}
       >
-        {activeUsers.map((u) => (
+        {activeUsers.map((u: PresenceUser) => (
           <CursorOverlay key={u.user_id} user={u} />
         ))}
 
@@ -439,7 +535,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
         </div>
       </div>
 
-      {/* AI Assistant modal */}
       {showAI && (
         <AIDocumentAssistant
           selectedText={selectedText}

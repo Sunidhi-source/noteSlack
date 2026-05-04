@@ -5,11 +5,6 @@ import { useUser } from "@clerk/nextjs";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { Message, TypingUser } from "@/types";
 
-// ── useMessages ───────────────────────────────────────────────
-// Fetches messages with user join and keeps them live via Realtime.
-// FIX: on INSERT, re-fetches the full row (with users join) so the
-//      sender name is available immediately — not just on next refresh.
-
 export function useMessages(channelId: string) {
   const supabase = useSupabaseClient();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -40,6 +35,7 @@ export function useMessages(channelId: string) {
           filter: `channel_id=eq.${channelId}`,
         },
         async (payload) => {
+          if (!payload.new) return;
           // Re-fetch with users join so full_name is populated immediately
           const { data: fullMsg } = await supabase
             .from("messages")
@@ -49,7 +45,7 @@ export function useMessages(channelId: string) {
           if (fullMsg) {
             setMessages((prev) => [...prev, fullMsg as Message]);
           }
-        }
+        },
       )
       .on(
         "postgres_changes",
@@ -60,6 +56,7 @@ export function useMessages(channelId: string) {
           filter: `channel_id=eq.${channelId}`,
         },
         async (payload) => {
+          if (!payload.new) return;
           const { data: fullMsg } = await supabase
             .from("messages")
             .select("*, users(full_name, avatar_url)")
@@ -68,11 +65,11 @@ export function useMessages(channelId: string) {
           if (fullMsg) {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === (fullMsg as Message).id ? (fullMsg as Message) : m
-              )
+                m.id === (fullMsg as Message).id ? (fullMsg as Message) : m,
+              ),
             );
           }
-        }
+        },
       )
       .on(
         "postgres_changes",
@@ -83,10 +80,12 @@ export function useMessages(channelId: string) {
           filter: `channel_id=eq.${channelId}`,
         },
         (payload) => {
-          setMessages((prev) =>
-            prev.filter((m) => m.id !== (payload.old as Message).id)
-          );
-        }
+          // Guard: payload.old is only populated if replica identity is FULL in Supabase
+          const oldId = (payload.old as Partial<Message>)?.id;
+          if (oldId) {
+            setMessages((prev) => prev.filter((m) => m.id !== oldId));
+          }
+        },
       )
       .subscribe();
 
@@ -121,6 +120,7 @@ export function useTypingIndicator(channelId: string) {
     const channel = supabase
       .channel(`typing:${channelId}`)
       .on("broadcast", { event: "typing" }, (payload) => {
+        if (!payload.payload) return;
         const typingUser = payload.payload as TypingUser;
         if (typingUser.user_id === user?.id) return;
         setTypingUsers((prev) => {
@@ -129,7 +129,7 @@ export function useTypingIndicator(channelId: string) {
         });
         setTimeout(() => {
           setTypingUsers((prev) =>
-            prev.filter((u) => u.user_id !== typingUser.user_id)
+            prev.filter((u) => u.user_id !== typingUser.user_id),
           );
         }, 3000);
       })
@@ -143,9 +143,6 @@ export function useTypingIndicator(channelId: string) {
   return { typingUsers, sendTyping };
 }
 
-// ── useThreadMessages ─────────────────────────────────────────
-// Fetches replies for a specific parent message
-
 export function useThreadMessages(parentMessageId: string | null) {
   const supabase = useSupabaseClient();
   const [replies, setReplies] = useState<Message[]>([]);
@@ -154,7 +151,7 @@ export function useThreadMessages(parentMessageId: string | null) {
   useEffect(() => {
     if (!parentMessageId) {
       setReplies([]);
-      return;
+      return () => {};
     }
     setLoading(true);
 
@@ -179,13 +176,14 @@ export function useThreadMessages(parentMessageId: string | null) {
           filter: `parent_message_id=eq.${parentMessageId}`,
         },
         async (payload) => {
+          if (!payload.new) return;
           const { data: fullMsg } = await supabase
             .from("messages")
             .select("*, users(full_name, avatar_url)")
             .eq("id", (payload.new as Message).id)
             .single();
           if (fullMsg) setReplies((prev) => [...prev, fullMsg as Message]);
-        }
+        },
       )
       .on(
         "postgres_changes",
@@ -196,10 +194,12 @@ export function useThreadMessages(parentMessageId: string | null) {
           filter: `parent_message_id=eq.${parentMessageId}`,
         },
         (payload) => {
-          setReplies((prev) =>
-            prev.filter((m) => m.id !== (payload.old as Message).id)
-          );
-        }
+          // Guard: payload.old is only populated if replica identity is FULL in Supabase
+          const oldId = (payload.old as Partial<Message>)?.id;
+          if (oldId) {
+            setReplies((prev) => prev.filter((m) => m.id !== oldId));
+          }
+        },
       )
       .subscribe();
 

@@ -1,23 +1,25 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { useAuth } from "@clerk/nextjs";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (typeof window !== "undefined" && (!supabaseUrl || !supabaseAnonKey)) {
   throw new Error(
     "Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are required.",
   );
 }
 
-// Single instance at module level — created once for the entire app lifetime
 let supabaseInstance: SupabaseClient | null = null;
-let currentGetToken: (() => Promise<string | null>) | null = null;
-let currentIsSignedIn: boolean = false;
-let currentIsLoaded: boolean = false;
+
+const authState = {
+  getToken: null as null | (() => Promise<string | null>),
+  isLoaded: false,
+  isSignedIn: false,
+};
 
 function getSupabaseClient(): SupabaseClient {
   if (supabaseInstance) return supabaseInstance;
@@ -30,19 +32,22 @@ function getSupabaseClient(): SupabaseClient {
         headers.set("Accept", "application/json");
         headers.set("Content-Type", "application/json");
 
-        if (currentIsLoaded && currentIsSignedIn && currentGetToken) {
+        if (authState.isLoaded && authState.isSignedIn && authState.getToken) {
           try {
-            const token = await currentGetToken();
+            const token = await authState.getToken();
             if (token) {
               headers.set("Authorization", `Bearer ${token}`);
             }
-          } catch (error) {
-            console.warn("Failed to retrieve Clerk token for Supabase:", error);
+          } catch {
+            // fallback to anon
           }
         }
 
         return fetch(url, { ...options, headers });
       },
+    },
+    realtime: {
+      params: { eventsPerSecond: 10 },
     },
     auth: {
       persistSession: false,
@@ -51,14 +56,22 @@ function getSupabaseClient(): SupabaseClient {
     },
   });
 
+  supabaseInstance.realtime.setAuth(null);
+
   return supabaseInstance;
 }
+
 export function useSupabaseClient(): SupabaseClient {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
-  currentGetToken = () => getToken({ template: "supabase" });
-  currentIsLoaded = isLoaded;
-  currentIsSignedIn = isSignedIn ?? false;
+  // ✅ SAFE: side effects go inside useEffect
+  useEffect(() => {
+    authState.getToken = () =>
+      getToken({ template: "supabase" }).catch(() => null);
+
+    authState.isLoaded = isLoaded;
+    authState.isSignedIn = isSignedIn ?? false;
+  }, [getToken, isLoaded, isSignedIn]);
 
   return getSupabaseClient();
 }
