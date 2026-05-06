@@ -54,23 +54,23 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const [collab, setCollab] = useState(false);
   const [showAI, setShowAI] = useState(false);
   const [selectedText, setSelectedText] = useState("");
+  const [collabResources, setCollabResources] = useState<{
+    ydoc: Y.Doc;
+    provider: SupabaseProvider;
+  } | null>(null);
 
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<SupabaseProvider | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Track whether we've done the first title sync for this docId
-  const titleSyncedForDoc = useRef<string | null>(null);
 
   // Sync title from store/DB — only on first load per docId, never overwrite user edits
-  if (titleSyncedForDoc.current !== docId && doc?.title !== undefined) {
-    titleSyncedForDoc.current = docId;
     // Direct assignment during render is fine for initialisation — no effect needed
-  }
 
   // Reset unsaved flag when navigating to a different doc
   useEffect(() => {
-    setHasUnsavedTitle(false);
+    queueMicrotask(() => setHasUnsavedTitle(false));
   }, [docId]);
 
   // Fetch doc from DB if not in store, or sync title when doc first arrives
@@ -78,8 +78,10 @@ export function DocumentView({ workspaceId, docId }: Props) {
     if (doc) {
       // Only update title if the user hasn't started editing
       if (!hasUnsavedTitle) {
-        setTitle(doc.title ?? "");
-        setOriginalTitle(doc.title ?? "");
+        queueMicrotask(() => {
+          setTitle(doc.title ?? "");
+          setOriginalTitle(doc.title ?? "");
+        });
       }
       return;
     }
@@ -121,6 +123,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
           ...(token && { supabaseJwt: token }),
         });
         providerRef.current = provider;
+        setCollabResources({ ydoc, provider });
         provider.on("synced", () => setCollab(true));
       } catch (err) {
         console.error("SupabaseProvider error:", err);
@@ -132,6 +135,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
       ydocRef.current?.destroy();
       ydocRef.current = null;
       providerRef.current = null;
+      setCollabResources(null);
       setCollab(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,11 +198,11 @@ export function DocumentView({ workspaceId, docId }: Props) {
         Placeholder.configure({
           placeholder: "Start writing something great…",
         }),
-        ...(ydocRef.current
+        ...(collabResources
           ? [
-              Collaboration.configure({ document: ydocRef.current }),
+              Collaboration.configure({ document: collabResources.ydoc }),
               CollaborationCursor.configure({
-                provider: providerRef.current!,
+                provider: collabResources.provider,
                 user: {
                   name: user?.fullName ?? "Anonymous",
                   color: generateUserColor(user?.id ?? ""),
@@ -214,7 +218,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
         },
       },
     },
-    [collab],
+    [collabResources, user?.fullName, user?.id],
   );
 
   const handleEditorMouseUp = useCallback(() => {

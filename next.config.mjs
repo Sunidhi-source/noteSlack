@@ -6,7 +6,6 @@ const nextConfig = {
       { protocol: "https", hostname: "images.clerk.dev" },
     ],
   },
-  serverExternalPackages: ["y-supabase", "yjs"],
   turbopack: {
     resolveAlias: {
       "y-supabase": "./node_modules/y-supabase/dist/index.js",

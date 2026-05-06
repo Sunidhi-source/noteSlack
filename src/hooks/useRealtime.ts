@@ -150,10 +150,10 @@ export function useThreadMessages(parentMessageId: string | null) {
 
   useEffect(() => {
     if (!parentMessageId) {
-      setReplies([]);
+      queueMicrotask(() => setReplies([]));
       return () => {};
     }
-    setLoading(true);
+    queueMicrotask(() => setLoading(true));
 
     supabase
       .from("messages")

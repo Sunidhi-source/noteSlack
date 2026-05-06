@@ -10,7 +10,6 @@ import {
   Trash2,
   Pin,
   Smile,
-  Paperclip,
   X,
   ChevronDown,
 } from "lucide-react";

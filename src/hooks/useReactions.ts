@@ -37,7 +37,9 @@ export function useReactions(messageId: string) {
   }, [messageId, supabase, user?.id]);
 
   useEffect(() => {
-    fetchReactions();
+    queueMicrotask(() => {
+      void fetchReactions();
+    });
 
     const channel = supabase
       .channel(`reactions:${messageId}`)
@@ -49,7 +51,7 @@ export function useReactions(messageId: string) {
           table: "reactions",
           filter: `message_id=eq.${messageId}`,
         },
-        () => fetchReactions()
+        () => fetchReactions(),
       )
       .subscribe();
 
@@ -75,7 +77,7 @@ export function useReactions(messageId: string) {
           .insert({ message_id: messageId, user_id: user.id, emoji });
       }
     },
-    [messageId, reactions, supabase, user]
+    [messageId, reactions, supabase, user],
   );
 
   return { reactions, toggleReaction };

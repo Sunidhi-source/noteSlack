@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -68,8 +69,10 @@ export function ProfileView({ workspaceId, userId }: Props) {
   useEffect(() => {
     if (!userId || !workspaceId) return;
 
-    setLoading(true);
-    setError(null);
+    queueMicrotask(() => {
+      setLoading(true);
+      setError(null);
+    });
 
     fetch(`/api/profile/${userId}?workspaceId=${workspaceId}`)
       .then(async (r) => {
@@ -233,12 +236,12 @@ export function ProfileView({ workspaceId, userId }: Props) {
         >
           <div style={{ position: "relative", flexShrink: 0 }}>
             {profile.avatar_url ? (
-              <img
+              <Image
                 src={profile.avatar_url}
                 alt={profile.full_name ?? ""}
+                width={80}
+                height={80}
                 style={{
-                  width: 80,
-                  height: 80,
                   borderRadius: "50%",
                   objectFit: "cover",
                 }}

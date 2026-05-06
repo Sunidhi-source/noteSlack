@@ -18,7 +18,7 @@ export function CreateChannelModal({ workspaceId, onClose }: Props) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { addChannel, currentWorkspace } = useWorkspaceStore();
+  const { addChannel } = useWorkspaceStore();
   const router = useRouter();
 
   const sanitizedName = name

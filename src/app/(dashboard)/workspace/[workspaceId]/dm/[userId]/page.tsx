@@ -2,7 +2,6 @@
 
 import { use, useState, useRef, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useDmMessages } from "@/hooks/useDmMessages";
@@ -23,7 +22,6 @@ export default function DmPage({ params }: Props) {
 
   useWorkspace(workspaceId);
   const { user } = useUser();
-  const supabase = useSupabaseClient();
   const { members } = useWorkspaceStore();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");

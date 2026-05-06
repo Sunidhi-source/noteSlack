@@ -1,7 +1,6 @@
 "use client";
 
 import { use } from "react";
-import { useWorkspace } from "@/hooks/useWorkspace";
 import { DocumentView } from "@/components/editor/DocumentView";
 
 interface Props {
@@ -9,7 +8,14 @@ interface Props {
 }
 
 export default function DocPage({ params }: Props) {
-  const { workspaceId, docId } = use(params);
-  useWorkspace(workspaceId);
+  const resolvedParams = use(params);
+
+  const workspaceId = resolvedParams.workspaceId;
+  const docId = resolvedParams.docId;
+
+  if (!workspaceId || !docId) {
+    return null;
+  }
+
   return <DocumentView workspaceId={workspaceId} docId={docId} />;
 }

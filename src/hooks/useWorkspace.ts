@@ -1,21 +1,15 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspaceStore } from "@/store/workspace";
-import {
-  Channel,
-  Document,
-  DmConversation,
-  Notification,
-  User,
-  Workspace,
-} from "@/types";
+import { Channel, Document, Notification, User, Workspace } from "@/types";
 
 export function useWorkspace(workspaceId: string) {
   const supabase = useSupabaseClient();
-  const supabaseRef = useRef(supabase); // ✅ lock instance
+  const supabaseRef = useRef(supabase);
+  const channelId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
 
   const { user } = useUser();
 
@@ -25,21 +19,14 @@ export function useWorkspace(workspaceId: string) {
     setDocuments,
     setMembers,
     setNotifications,
-    setDmConversations,
     addNotification,
     incrementUnread,
   } = useWorkspaceStore();
-
-  // ✅ prevent duplicate subscriptions
-  const hasSubscribedRef = useRef(false);
 
   useEffect(() => {
     if (!workspaceId || !user?.id) return;
 
     const client = supabaseRef.current;
-
-    // ── FETCH DATA (unchanged) ───────────────────────────────
-
     client
       .from("workspaces")
       .select("*")
@@ -72,7 +59,7 @@ export function useWorkspace(workspaceId: string) {
       .then(({ data }) => {
         if (data) {
           const users = data
-            .map((m) => m.users)
+            .map((member) => member.users)
             .filter(Boolean) as unknown as User[];
           setMembers(users);
         }
@@ -86,60 +73,62 @@ export function useWorkspace(workspaceId: string) {
         if (data) setNotifications(data as Notification[]);
       });
 
-    // 🛑 IMPORTANT: avoid double subscription
-    if (hasSubscribedRef.current) return;
-    hasSubscribedRef.current = true;
+    const notifChannel = client
+      .channel(`notifications:${user.id}:${channelId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            addNotification(payload.new as Notification);
+          }
+        },
+      )
+      .subscribe();
 
-    // ── REALTIME ─────────────────────────────────────────────
+    const msgChannel = client
+      .channel(`workspace_messages:${workspaceId}:${channelId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          if (!payload.new) return;
 
-    const notifChannel = client.channel(`notifications:${user.id}`);
+          const msg = payload.new as {
+            channel_id: string;
+            user_id: string;
+          };
 
-    notifChannel.on(
-      "postgres_changes",
-      {
-        event: "INSERT",
-        schema: "public",
-        table: "notifications",
-        filter: `user_id=eq.${user.id}`,
-      },
-      (payload) => {
-        if (payload.new) {
-          addNotification(payload.new as Notification);
-        }
-      },
-    );
-
-    notifChannel.subscribe();
-
-    const msgChannel = client.channel(`workspace_messages:${workspaceId}`);
-
-    msgChannel.on(
-      "postgres_changes",
-      {
-        event: "INSERT",
-        schema: "public",
-        table: "messages",
-      },
-      (payload) => {
-        if (!payload.new) return;
-
-        const msg = payload.new as {
-          channel_id: string;
-          user_id: string;
-        };
-
-        if (msg.user_id !== user.id) {
-          incrementUnread(msg.channel_id);
-        }
-      },
-    );
-
-    msgChannel.subscribe();
+          if (msg.user_id !== user.id) {
+            incrementUnread(msg.channel_id);
+          }
+        },
+      )
+      .subscribe();
 
     return () => {
       client.removeChannel(notifChannel);
       client.removeChannel(msgChannel);
-      hasSubscribedRef.current = false; // reset
     };
-  }, [workspaceId, user?.id]);
+  }, [
+    workspaceId,
+    user?.id,
+    setCurrentWorkspace,
+    setChannels,
+    setDocuments,
+    setMembers,
+    setNotifications,
+    addNotification,
+    incrementUnread,
+    channelId,
+  ]);
 }

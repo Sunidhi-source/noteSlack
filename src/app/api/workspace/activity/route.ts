@@ -2,6 +2,24 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+interface RecentMessageActivity {
+  id: string;
+  content: string;
+  created_at: string;
+  user_id: string;
+  channel_id: string;
+  users: { full_name: string | null } | null;
+  channels: { name: string; workspace_id: string } | null;
+}
+
+interface RecentDocumentActivity {
+  id: string;
+  title: string;
+  updated_at: string;
+  last_edited_by: string | null;
+  users: { full_name: string | null } | null;
+}
+
 export async function GET(req: Request) {
   const { userId } = await auth();
   if (!userId) return new NextResponse("Unauthorized", { status: 401 });
@@ -42,7 +60,7 @@ export async function GET(req: Request) {
     .limit(10);
 
   const activity = [
-    ...(recentMessages ?? []).map((m: any) => ({
+    ...((recentMessages as RecentMessageActivity[] | null) ?? []).map((m) => ({
       type: "message" as const,
       id: m.id,
       actor: m.users?.full_name ?? "Someone",
@@ -51,10 +69,10 @@ export async function GET(req: Request) {
       link: `/workspace/${workspaceId}/channel/${m.channel_id}`,
       timestamp: m.created_at,
     })),
-    ...(recentDocs ?? []).map((d: any) => ({
+    ...((recentDocs as RecentDocumentActivity[] | null) ?? []).map((d) => ({
       type: "document" as const,
       id: d.id,
-      actor: (d.users as { full_name: string | null } | null)?.full_name ?? "Someone",
+      actor: d.users?.full_name ?? "Someone",
       description: `edited document`,
       preview: d.title,
       link: `/workspace/${workspaceId}/docs/${d.id}`,

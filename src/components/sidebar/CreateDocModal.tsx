@@ -5,7 +5,6 @@ import { Modal, inputStyle, btnPrimaryStyle } from "@/components/ui/Modal";
 import { useWorkspaceStore } from "@/store/workspace";
 import { Document } from "@/types";
 import { useRouter } from "next/navigation";
-import { FileText } from "lucide-react";
 
 interface Props {
   workspaceId: string;

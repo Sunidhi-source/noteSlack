@@ -2,6 +2,25 @@ import { NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+interface ClerkEmailAddress {
+  id: string;
+  email_address: string;
+}
+
+interface ClerkUserWebhookData {
+  id: string;
+  email_addresses?: ClerkEmailAddress[];
+  primary_email_address_id?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  image_url?: string | null;
+}
+
+interface ClerkWebhookEvent {
+  type: string;
+  data: ClerkUserWebhookData;
+}
+
 export async function POST(req: Request) {
   const body = await req.text();
   const svixId = req.headers.get("svix-id");
@@ -18,14 +37,14 @@ export async function POST(req: Request) {
     return new NextResponse("Webhook secret not configured", { status: 500 });
   }
 
-  let event: { type: string; data: Record<string, any> };
+  let event: ClerkWebhookEvent;
   try {
     const wh = new Webhook(secret);
     event = wh.verify(body, {
       "svix-id": svixId,
       "svix-timestamp": svixTimestamp,
       "svix-signature": svixSignature,
-    }) as { type: string; data: Record<string, any> };
+    }) as ClerkWebhookEvent;
   } catch (err) {
     console.error("Webhook verification failed:", err);
     return new NextResponse("Invalid signature", { status: 400 });
@@ -36,7 +55,7 @@ export async function POST(req: Request) {
 
   if (type === "user.created" || type === "user.updated") {
     const primaryEmail = data.email_addresses?.find(
-      (e: any) => e.id === data.primary_email_address_id,
+      (e) => e.id === data.primary_email_address_id,
     )?.email_address;
 
     await supabase.from("users").upsert(

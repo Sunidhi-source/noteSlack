@@ -13,11 +13,11 @@ export function useDmMessages(conversationId: string | null) {
 
   useEffect(() => {
     if (!conversationId) {
-      setMessages([]);
+      queueMicrotask(() => setMessages([]));
       return;
     }
 
-    setLoading(true);
+    queueMicrotask(() => setLoading(true));
 
     supabase
       .from("dm_messages")
