@@ -56,7 +56,10 @@ function getSupabaseClient(): SupabaseClient {
     },
   });
 
-  supabaseInstance.realtime.setAuth(null);
+  // ✅ FIX: Removed supabaseInstance.realtime.setAuth(null)
+  // That line was wiping the Realtime auth token immediately after
+  // client init, causing all Realtime broadcasts to fail with 422.
+  // The token is now set correctly in DocumentView.tsx after getToken().
 
   return supabaseInstance;
 }
@@ -64,7 +67,6 @@ function getSupabaseClient(): SupabaseClient {
 export function useSupabaseClient(): SupabaseClient {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
-  // ✅ SAFE: side effects go inside useEffect
   useEffect(() => {
     authState.getToken = () =>
       getToken({ template: "supabase" }).catch(() => null);

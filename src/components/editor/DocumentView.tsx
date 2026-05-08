@@ -32,11 +32,7 @@ interface Props {
   docId: string;
 }
 
-function CollaborativeEditor({
-  ydoc,
-}: {
-  ydoc: Y.Doc;
-}) {
+function CollaborativeEditor({ ydoc }: { ydoc: Y.Doc }) {
   const editor = useEditor(
     {
       immediatelyRender: false,
@@ -47,8 +43,7 @@ function CollaborativeEditor({
         }),
 
         Placeholder.configure({
-          placeholder:
-            "Start writing something great...",
+          placeholder: "Start writing something great...",
         }),
 
         Collaboration.configure({
@@ -69,10 +64,7 @@ function CollaborativeEditor({
   return <EditorContent editor={editor} />;
 }
 
-export function DocumentView({
-  workspaceId,
-  docId,
-}: Props) {
+export function DocumentView({ workspaceId, docId }: Props) {
   useWorkspace(workspaceId);
 
   const router = useRouter();
@@ -82,22 +74,15 @@ export function DocumentView({
   const { user } = useUser();
   const { getToken } = useAuth();
 
-  const { documents, updateDocument } =
-    useWorkspaceStore();
+  const { documents, updateDocument } = useWorkspaceStore();
 
-  const doc = documents.find(
-    (d) => d.id === docId,
-  );
+  const doc = documents.find((d) => d.id === docId);
 
-  const [title, setTitle] = useState(
-    doc?.title ?? "",
-  );
+  const [title, setTitle] = useState(doc?.title ?? "");
 
-  const [hasUnsavedTitle, setHasUnsavedTitle] =
-    useState(false);
+  const [hasUnsavedTitle, setHasUnsavedTitle] = useState(false);
 
-  const [collabReady, setCollabReady] =
-    useState(false);
+  const [collabReady, setCollabReady] = useState(false);
 
   const [collab, setCollab] = useState(false);
 
@@ -105,25 +90,18 @@ export function DocumentView({
 
   const ydocRef = useRef<Y.Doc | null>(null);
 
-  const [ydoc, setYdoc] =
-    useState<Y.Doc | null>(null);
+  const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
 
-  const providerRef =
-    useRef<SupabaseProvider | null>(null);
+  const providerRef = useRef<SupabaseProvider | null>(null);
 
-  const saveTimer =
-    useRef<ReturnType<typeof setTimeout> | null>(
-      null,
-    );
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─────────────────────────────────────────────
   // Load document
   // ─────────────────────────────────────────────
 
   useEffect(() => {
-    queueMicrotask(() =>
-      setHasUnsavedTitle(false),
-    );
+    queueMicrotask(() => setHasUnsavedTitle(false));
   }, [docId]);
 
   useEffect(() => {
@@ -149,10 +127,7 @@ export function DocumentView({
         }
 
         if (data) {
-          updateDocument(
-            docId,
-            data as Document,
-          );
+          updateDocument(docId, data as Document);
 
           setTitle(data.title ?? "");
         }
@@ -188,44 +163,39 @@ export function DocumentView({
 
     (async () => {
       try {
+        // ✅ FIX: Always fetch and apply the token before creating
+        // SupabaseProvider. This ensures Realtime auth is set correctly
+        // before any channel subscription is made, preventing 422 errors.
         const token = await getToken({
           template: "supabase",
         }).catch(() => null);
+
+        if (!mounted) return;
 
         if (token) {
           supabase.realtime.setAuth(token);
         }
 
-        const provider = new SupabaseProvider(
-          ydoc,
-          supabase,
-          {
-            channel: `doc-${docId}`,
-            id: docId,
-            tableName: "documents",
-            columnName: "content",
-            resyncInterval: false,
-          },
-        );
+        const provider = new SupabaseProvider(ydoc, supabase, {
+          channel: `doc-${docId}`,
+          id: docId,
+          tableName: "documents",
+          columnName: "content",
+          resyncInterval: false,
+        });
 
         if (!mounted) return;
 
         providerRef.current = provider;
         setYdoc(ydoc);
 
-        provider?.on?.(
-          "synced",
-          () => {
-            setCollab(true);
-          },
-        );
+        provider?.on?.("synced", () => {
+          setCollab(true);
+        });
 
         setCollabReady(true);
       } catch (err) {
-        console.error(
-          "Collaboration setup failed:",
-          err,
-        );
+        console.error("Collaboration setup failed:", err);
       }
     })();
 
@@ -245,7 +215,6 @@ export function DocumentView({
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, user?.id]);
-
 
   // ─────────────────────────────────────────────
   // Save Title
@@ -269,81 +238,71 @@ export function DocumentView({
         });
       }
     },
-    [
-      docId,
-      supabase,
-      updateDocument,
-      user?.id,
-    ],
+    [docId, supabase, updateDocument, user?.id],
   );
 
-  const handleSaveDocument =
-    useCallback(async () => {
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-      }
+  const handleSaveDocument = useCallback(async () => {
+    // Clear any pending auto-save timer since we're saving now
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
 
-      setSaving(true);
+    setSaving(true);
 
-      try {
-        await saveTitle(title);
-        await providerRef.current?.save();
-        setHasUnsavedTitle(false);
-      } catch (error) {
-        console.error(
-          "Document save failed:",
-          error,
-        );
-      } finally {
-        setSaving(false);
-      }
-    }, [saveTitle, title]);
+    try {
+      await saveTitle(title);
+
+      // ✅ FIX: Removed `await providerRef.current?.save()` — y-supabase
+      // does not expose a .save() method. Document body is synced
+      // automatically via the Realtime channel. Only the title needs
+      // an explicit save call via saveTitle().
+
+      setHasUnsavedTitle(false);
+    } catch (error) {
+      console.error("Document save failed:", error);
+    } finally {
+      setSaving(false);
+    }
+  }, [saveTitle, title]);
 
   const handleBack = useCallback(() => {
-    router.push(
-      `/workspace/${workspaceId}`,
-    );
+    router.push(`/workspace/${workspaceId}`);
   }, [router, workspaceId]);
 
   useEffect(() => {
-    const handler = (
-      e: KeyboardEvent,
-    ) => {
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.key === "s"
-      ) {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
 
         handleSaveDocument();
       }
     };
 
-    window.addEventListener(
-      "keydown",
-      handler,
-    );
+    window.addEventListener("keydown", handler);
 
     return () => {
-      window.removeEventListener(
-        "keydown",
-        handler,
-      );
+      window.removeEventListener("keydown", handler);
     };
-  }, [
-    handleSaveDocument,
-  ]);
+  }, [handleSaveDocument]);
 
-  const handleTitleChange = (
-    newTitle: string,
-  ) => {
+  const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
-
     setHasUnsavedTitle(true);
 
+    // ✅ FIX: Restart the debounce timer on every keystroke so the title
+    // is auto-saved 1.5s after the user stops typing. Previously the timer
+    // was cleared but never restarted, so unsaved title changes were lost
+    // unless the user clicked Save manually.
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
     }
+
+    saveTimer.current = setTimeout(() => {
+      saveTitle(newTitle);
+      setHasUnsavedTitle(false);
+      saveTimer.current = null;
+    }, 1500);
   };
 
   // ─────────────────────────────────────────────
@@ -366,13 +325,10 @@ export function DocumentView({
         <RotateCw
           size={16}
           style={{
-            animation:
-              "spin 1s linear infinite",
+            animation: "spin 1s linear infinite",
           }}
         />
-
         Loading document...
-
         <style>{`
           @keyframes spin {
             to {
@@ -391,8 +347,7 @@ export function DocumentView({
         flexDirection: "column",
         height: "100%",
         overflow: "hidden",
-        background:
-          "var(--bg-base)",
+        background: "var(--bg-base)",
       }}
     >
       {/* Toolbar */}
@@ -400,14 +355,12 @@ export function DocumentView({
       <div
         style={{
           height: "var(--header-h)",
-          borderBottom:
-            "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
           gap: 6,
           padding: "0 20px",
-          background:
-            "var(--bg-surface)",
+          background: "var(--bg-surface)",
         }}
       >
         <button
@@ -418,8 +371,7 @@ export function DocumentView({
           style={{
             width: 32,
             height: 32,
-            border:
-              "1px solid var(--border)",
+            border: "1px solid var(--border)",
             background: "transparent",
             color: "var(--text-secondary)",
             borderRadius: 6,
@@ -460,21 +412,14 @@ export function DocumentView({
               display: "flex",
               alignItems: "center",
               gap: 6,
-              border:
-                "1px solid var(--border)",
-              background: saving
-                ? "var(--bg-hover)"
-                : "var(--accent)",
-              color: saving
-                ? "var(--text-muted)"
-                : "#fff",
+              border: "1px solid var(--border)",
+              background: saving ? "var(--bg-hover)" : "var(--accent)",
+              color: saving ? "var(--text-muted)" : "#fff",
               borderRadius: 6,
               padding: "6px 12px",
               fontSize: 12,
               fontWeight: 700,
-              cursor: saving
-                ? "not-allowed"
-                : "pointer",
+              cursor: saving ? "not-allowed" : "pointer",
               fontFamily: "inherit",
             }}
           >
@@ -482,8 +427,7 @@ export function DocumentView({
               <RotateCw
                 size={14}
                 style={{
-                  animation:
-                    "spin 1s linear infinite",
+                  animation: "spin 1s linear infinite",
                 }}
               />
             ) : (
@@ -496,8 +440,7 @@ export function DocumentView({
             <span
               style={{
                 fontSize: 11,
-                background:
-                  "var(--accent-soft)",
+                background: "var(--accent-soft)",
                 color: "var(--accent)",
                 padding: "2px 8px",
                 borderRadius: 999,
@@ -512,15 +455,13 @@ export function DocumentView({
                 alignItems: "center",
                 gap: 5,
                 fontSize: 12,
-                color:
-                  "var(--text-muted)",
+                color: "var(--text-muted)",
               }}
             >
               <CheckCircle2
                 size={12}
                 style={{
-                  color:
-                    "var(--success)",
+                  color: "var(--success)",
                 }}
               />
               Synced
@@ -546,23 +487,17 @@ export function DocumentView({
         >
           <input
             value={title}
-            onChange={(e) =>
-              handleTitleChange(
-                e.target.value,
-              )
-            }
+            onChange={(e) => handleTitleChange(e.target.value)}
             placeholder="Document Title"
             style={{
               width: "100%",
               border: "none",
               outline: "none",
-              background:
-                "transparent",
+              background: "transparent",
               fontSize: 40,
               fontWeight: 800,
               marginBottom: 32,
-              color:
-                "var(--text-primary)",
+              color: "var(--text-primary)",
             }}
           />
 
