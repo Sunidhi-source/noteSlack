@@ -2,69 +2,128 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
+import { useRouter } from "next/navigation";
+
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+
 import * as Y from "yjs";
 import SupabaseProvider from "y-supabase";
+
 import { useUser, useAuth } from "@clerk/nextjs";
+
 import {
-  Bold,
-  Italic,
-  Strikethrough,
-  List,
-  ListOrdered,
-  Heading2,
-  Quote,
-  Code,
+  ArrowLeft,
   FileText,
   CheckCircle2,
   RotateCw,
-  Users,
-  Sparkles,
+  Save,
 } from "lucide-react";
+
 import { useWorkspace } from "@/hooks/useWorkspace";
-import { usePresence } from "@/hooks/usePresence";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspaceStore } from "@/store/workspace";
-import { Document, PresenceUser } from "@/types";
-import { getInitials, generateUserColor } from "@/lib/utils";
-import { AIDocumentAssistant } from "./AIDocumentAssistant";
+
+import { Document } from "@/types";
 
 interface Props {
   workspaceId: string;
   docId: string;
 }
 
-export function DocumentView({ workspaceId, docId }: Props) {
+function CollaborativeEditor({
+  ydoc,
+}: {
+  ydoc: Y.Doc;
+}) {
+  const editor = useEditor(
+    {
+      immediatelyRender: false,
+
+      extensions: [
+        StarterKit.configure({
+          undoRedo: false,
+        }),
+
+        Placeholder.configure({
+          placeholder:
+            "Start writing something great...",
+        }),
+
+        Collaboration.configure({
+          document: ydoc,
+        }),
+      ],
+
+      editorProps: {
+        attributes: {
+          class:
+            "prose prose-sm sm:prose lg:prose-lg max-w-none focus:outline-none",
+        },
+      },
+    },
+    [ydoc],
+  );
+
+  return <EditorContent editor={editor} />;
+}
+
+export function DocumentView({
+  workspaceId,
+  docId,
+}: Props) {
   useWorkspace(workspaceId);
+
+  const router = useRouter();
+
   const supabase = useSupabaseClient();
+
   const { user } = useUser();
   const { getToken } = useAuth();
-  const { documents, updateDocument } = useWorkspaceStore();
-  const { activeUsers, updateCursor } = usePresence(docId);
 
-  const doc = documents.find((d) => d.id === docId);
+  const { documents, updateDocument } =
+    useWorkspaceStore();
 
-  const [title, setTitle] = useState(doc?.title ?? "");
-  const [originalTitle, setOriginalTitle] = useState(doc?.title ?? "");
-  const [hasUnsavedTitle, setHasUnsavedTitle] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const doc = documents.find(
+    (d) => d.id === docId,
+  );
+
+  const [title, setTitle] = useState(
+    doc?.title ?? "",
+  );
+
+  const [hasUnsavedTitle, setHasUnsavedTitle] =
+    useState(false);
+
+  const [collabReady, setCollabReady] =
+    useState(false);
+
   const [collab, setCollab] = useState(false);
-  const [showAI, setShowAI] = useState(false);
-  const [selectedText, setSelectedText] = useState("");
 
-  // ✅ Store ydoc and provider in refs only — no state
+  const [saving, setSaving] = useState(false);
+
   const ydocRef = useRef<Y.Doc | null>(null);
-  const providerRef = useRef<SupabaseProvider | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // ✅ Track whether collab resources are ready for editor
-  const [collabReady, setCollabReady] = useState(false);
+  const [ydoc, setYdoc] =
+    useState<Y.Doc | null>(null);
+
+  const providerRef =
+    useRef<SupabaseProvider | null>(null);
+
+  const saveTimer =
+    useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
+
+  // ─────────────────────────────────────────────
+  // Load document
+  // ─────────────────────────────────────────────
 
   useEffect(() => {
-    queueMicrotask(() => setHasUnsavedTitle(false));
+    queueMicrotask(() =>
+      setHasUnsavedTitle(false),
+    );
   }, [docId]);
 
   useEffect(() => {
@@ -72,387 +131,444 @@ export function DocumentView({ workspaceId, docId }: Props) {
       if (!hasUnsavedTitle) {
         queueMicrotask(() => {
           setTitle(doc.title ?? "");
-          setOriginalTitle(doc.title ?? "");
         });
       }
+
       return;
     }
+
     supabase
       .from("documents")
       .select("*")
       .eq("id", docId)
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          console.error(error);
+          return;
+        }
+
         if (data) {
-          updateDocument(docId, data as Document);
+          updateDocument(
+            docId,
+            data as Document,
+          );
+
           setTitle(data.title ?? "");
-          setOriginalTitle(data.title ?? "");
         }
       });
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, doc?.id]);
 
-  // ── Setup Yjs + SupabaseProvider ──────────────────────────────
+  // ─────────────────────────────────────────────
+  // Setup Collaboration
+  // ─────────────────────────────────────────────
+
   useEffect(() => {
     if (!user || !supabase) return;
 
-    // Destroy previous instances
     providerRef.current?.destroy();
     ydocRef.current?.destroy();
-    setCollabReady(false);
-    setCollab(false);
+
+    providerRef.current = null;
+    ydocRef.current = null;
+
+    queueMicrotask(() => {
+      setYdoc(null);
+      setCollabReady(false);
+      setCollab(false);
+    });
 
     const ydoc = new Y.Doc();
+
     ydocRef.current = ydoc;
+
+    let mounted = true;
 
     (async () => {
       try {
-        const token = await getToken({ template: "supabase" }).catch(() => null);
-        const provider = new SupabaseProvider(ydoc, supabase, {
-          channel: `doc-crdt-${docId}`,
-          id: docId,
-          tableName: "documents",
-          columnName: "content",
-          ...(token && { supabaseJwt: token }),
-        });
+        const token = await getToken({
+          template: "supabase",
+        }).catch(() => null);
+
+        if (token) {
+          supabase.realtime.setAuth(token);
+        }
+
+        const provider = new SupabaseProvider(
+          ydoc,
+          supabase,
+          {
+            channel: `doc-${docId}`,
+            id: docId,
+            tableName: "documents",
+            columnName: "content",
+            resyncInterval: false,
+          },
+        );
+
+        if (!mounted) return;
+
         providerRef.current = provider;
+        setYdoc(ydoc);
 
-        // ✅ Mark ready BEFORE synced fires so editor can mount with valid ydoc
+        provider?.on?.(
+          "synced",
+          () => {
+            setCollab(true);
+          },
+        );
+
         setCollabReady(true);
-
-        provider.on("synced", () => setCollab(true));
       } catch (err) {
-        console.error("SupabaseProvider error:", err);
+        console.error(
+          "Collaboration setup failed:",
+          err,
+        );
       }
     })();
 
     return () => {
+      mounted = false;
+
       providerRef.current?.destroy();
       ydocRef.current?.destroy();
-      ydocRef.current = null;
+
       providerRef.current = null;
+      ydocRef.current = null;
+      setYdoc(null);
+
       setCollabReady(false);
       setCollab(false);
     };
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, user?.id]);
 
-  // ── Editor ────────────────────────────────────────────────────
-  const editor = useEditor(
-    {
-      immediatelyRender: false,
-      extensions: [
-        // ✅ Disable history in StarterKit — Collaboration handles it via Y.js
-        StarterKit.configure({ history: false }),
-        Placeholder.configure({
-          placeholder: "Start writing something great…",
-        }),
-        // ✅ Only add Collaboration extensions when ydoc and provider are ready
-        ...(collabReady && ydocRef.current && providerRef.current
-          ? [
-              Collaboration.configure({ document: ydocRef.current }),
-              CollaborationCursor.configure({
-                provider: providerRef.current,
-                user: {
-                  name: user?.fullName ?? "Anonymous",
-                  color: generateUserColor(user?.id ?? ""),
-                },
-              }),
-            ]
-          : []),
-      ],
-      editorProps: {
-        attributes: {
-          class: "prose prose-sm sm:prose lg:prose-lg focus:outline-none max-w-none",
-        },
-      },
-    },
-    // ✅ Only re-initialize when collabReady flips — not on every render
-    [collabReady, user?.fullName, user?.id],
-  );
 
-  // ── Save title to DB ──────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // Save Title
+  // ─────────────────────────────────────────────
+
   const saveTitle = useCallback(
     async (newTitle: string) => {
-      setSaving(true);
-      await supabase
+      const { error } = await supabase
         .from("documents")
-        .update({ title: newTitle, last_edited_by: user?.id })
+        .update({
+          title: newTitle,
+          last_edited_by: user?.id,
+        })
         .eq("id", docId);
-      updateDocument(docId, { title: newTitle });
-      setSaving(false);
+
+      if (error) {
+        console.error(error);
+      } else {
+        updateDocument(docId, {
+          title: newTitle,
+        });
+      }
     },
-    [docId, supabase, updateDocument, user?.id],
+    [
+      docId,
+      supabase,
+      updateDocument,
+      user?.id,
+    ],
   );
 
-  const handleSaveTitle = useCallback(async () => {
-    clearTimeout(saveTimer.current);
-    await saveTitle(title);
-    setOriginalTitle(title);
-    setHasUnsavedTitle(false);
-  }, [title, saveTitle]);
+  const handleSaveDocument =
+    useCallback(async () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+      }
 
-  const handleDiscardTitle = useCallback(() => {
-    clearTimeout(saveTimer.current);
-    setTitle(originalTitle);
-    setHasUnsavedTitle(false);
-  }, [originalTitle]);
+      setSaving(true);
+
+      try {
+        await saveTitle(title);
+        await providerRef.current?.save();
+        setHasUnsavedTitle(false);
+      } catch (error) {
+        console.error(
+          "Document save failed:",
+          error,
+        );
+      } finally {
+        setSaving(false);
+      }
+    }, [saveTitle, title]);
+
+  const handleBack = useCallback(() => {
+    router.push(
+      `/workspace/${workspaceId}`,
+    );
+  }, [router, workspaceId]);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+    const handler = (
+      e: KeyboardEvent,
+    ) => {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key === "s"
+      ) {
         e.preventDefault();
-        if (hasUnsavedTitle) handleSaveTitle();
+
+        handleSaveDocument();
       }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [hasUnsavedTitle, handleSaveTitle]);
 
-  const handleTitleChange = (newTitle: string) => {
+    window.addEventListener(
+      "keydown",
+      handler,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handler,
+      );
+    };
+  }, [
+    handleSaveDocument,
+  ]);
+
+  const handleTitleChange = (
+    newTitle: string,
+  ) => {
     setTitle(newTitle);
+
     setHasUnsavedTitle(true);
-    clearTimeout(saveTimer.current);
+
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+    }
   };
 
-  const handleEditorMouseUp = useCallback(() => {
-    const selection = window.getSelection();
-    const text = selection?.toString().trim() ?? "";
-    setSelectedText(text);
-  }, []);
+  // ─────────────────────────────────────────────
+  // Loading
+  // ─────────────────────────────────────────────
 
-  const handleInsertAIResult = useCallback(
-    (text: string) => {
-      if (!editor) return;
-      const { from } = editor.state.selection;
-      editor.chain().focus().insertContentAt(from, text).run();
-    },
-    [editor],
-  );
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      updateCursor(e.clientX - rect.left, e.clientY - rect.top);
-    },
-    [updateCursor],
-  );
-
-  // ✅ Don't render editor until ydoc is ready — prevents the 'doc' undefined crash
-  if (!collabReady) {
+  if (!collabReady || !ydoc) {
     return (
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        color: "var(--text-muted)",
-        fontSize: 14,
-        gap: 8,
-      }}>
-        <RotateCw size={16} style={{ animation: "spin 1s linear infinite" }} />
-        Loading document…
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          gap: 8,
+          color: "var(--text-muted)",
+          fontSize: 14,
+        }}
+      >
+        <RotateCw
+          size={16}
+          style={{
+            animation:
+              "spin 1s linear infinite",
+          }}
+        />
+
+        Loading document...
+
+        <style>{`
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-      background: "var(--bg-base)",
-      overflow: "hidden",
-    }}>
-      {/* ── Toolbar ── */}
-      <div style={{
-        height: "var(--header-h)",
-        borderBottom: "1px solid var(--border)",
+    <div
+      style={{
         display: "flex",
-        alignItems: "center",
-        padding: "0 20px",
-        gap: 6,
-        background: "var(--bg-surface)",
-        flexShrink: 0,
-        flexWrap: "wrap",
-      }}>
-        <div style={{
+        flexDirection: "column",
+        height: "100%",
+        overflow: "hidden",
+        background:
+          "var(--bg-base)",
+      }}
+    >
+      {/* Toolbar */}
+
+      <div
+        style={{
+          height: "var(--header-h)",
+          borderBottom:
+            "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
-          gap: 5,
-          background: "var(--accent-soft)",
-          color: "var(--accent)",
-          borderRadius: 6,
-          padding: "3px 8px",
-          fontSize: 11,
-          fontWeight: 700,
-          marginRight: 4,
-        }}>
-          <FileText size={12} /> Doc
-        </div>
-
-        <ToolbarDivider />
-        <ToolbarBtn active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()} title="Bold"><Bold size={14} /></ToolbarBtn>
-        <ToolbarBtn active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()} title="Italic"><Italic size={14} /></ToolbarBtn>
-        <ToolbarBtn active={editor?.isActive("strike")} onClick={() => editor?.chain().focus().toggleStrike().run()} title="Strike"><Strikethrough size={14} /></ToolbarBtn>
-        <ToolbarBtn active={editor?.isActive("code")} onClick={() => editor?.chain().focus().toggleCode().run()} title="Code"><Code size={14} /></ToolbarBtn>
-        <ToolbarDivider />
-        <ToolbarBtn active={editor?.isActive("heading", { level: 2 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading"><Heading2 size={14} /></ToolbarBtn>
-        <ToolbarBtn active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()} title="Bullet list"><List size={14} /></ToolbarBtn>
-        <ToolbarBtn active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()} title="Numbered list"><ListOrdered size={14} /></ToolbarBtn>
-        <ToolbarBtn active={editor?.isActive("blockquote")} onClick={() => editor?.chain().focus().toggleBlockquote().run()} title="Quote"><Quote size={14} /></ToolbarBtn>
-        <ToolbarDivider />
-
+          gap: 6,
+          padding: "0 20px",
+          background:
+            "var(--bg-surface)",
+        }}
+      >
         <button
-          onClick={() => setShowAI(true)}
+          type="button"
+          onClick={handleBack}
+          aria-label="Back to documents"
+          title="Back to documents"
+          style={{
+            width: 32,
+            height: 32,
+            border:
+              "1px solid var(--border)",
+            background: "transparent",
+            color: "var(--text-secondary)",
+            borderRadius: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          <ArrowLeft size={16} />
+        </button>
+
+        <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: 5,
-            padding: "4px 10px",
-            background: "linear-gradient(135deg, var(--accent), #a78bfa)",
-            border: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-            color: "#fff",
-            fontSize: 12,
             fontWeight: 600,
           }}
         >
-          <Sparkles size={13} /> AI Assist
-        </button>
+          <FileText size={14} />
+          Document
+        </div>
 
-        {/* ── Right side ── */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-          {activeUsers.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <Users size={13} style={{ color: "var(--text-muted)" }} />
-              <div style={{ display: "flex", marginLeft: 2 }}>
-                {activeUsers.slice(0, 4).map((u: PresenceUser) => (
-                  <div
-                    key={u.user_id}
-                    title={u.name ?? "Collaborator"}
-                    style={{
-                      width: 24, height: 24, borderRadius: "50%",
-                      background: u.color ?? "var(--accent)",
-                      border: "2px solid var(--bg-surface)",
-                      marginLeft: -6, display: "flex",
-                      alignItems: "center", justifyContent: "center",
-                      fontSize: 9, color: "#fff", fontWeight: 700,
-                    }}
-                  >
-                    {getInitials(u.name ?? "C")}
-                  </div>
-                ))}
-                {activeUsers.length > 4 && (
-                  <div style={{
-                    width: 24, height: 24, borderRadius: "50%",
-                    background: "var(--bg-hover)",
-                    border: "2px solid var(--bg-surface)",
-                    marginLeft: -6, display: "flex",
-                    alignItems: "center", justifyContent: "center",
-                    fontSize: 9, color: "var(--text-secondary)",
-                  }}>
-                    +{activeUsers.length - 4}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleSaveDocument}
+            disabled={saving}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              border:
+                "1px solid var(--border)",
+              background: saving
+                ? "var(--bg-hover)"
+                : "var(--accent)",
+              color: saving
+                ? "var(--text-muted)"
+                : "#fff",
+              borderRadius: 6,
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: saving
+                ? "not-allowed"
+                : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {saving ? (
+              <RotateCw
+                size={14}
+                style={{
+                  animation:
+                    "spin 1s linear infinite",
+                }}
+              />
+            ) : (
+              <Save size={14} />
+            )}
+            {saving ? "Saving" : "Save"}
+          </button>
 
-          {hasUnsavedTitle ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <button onClick={handleDiscardTitle} style={{ padding: "4px 12px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit" }}>
-                Discard
-              </button>
-              <button onClick={handleSaveTitle} style={{ padding: "4px 12px", fontSize: 12, borderRadius: 6, border: "none", background: "var(--accent)", color: "#fff", cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>
-                Save
-              </button>
-            </div>
+          {!collab ? (
+            <span
+              style={{
+                fontSize: 11,
+                background:
+                  "var(--accent-soft)",
+                color: "var(--accent)",
+                padding: "2px 8px",
+                borderRadius: 999,
+              }}
+            >
+              Connecting...
+            </span>
           ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--text-muted)" }}>
-              {saving ? (
-                <><RotateCw size={12} style={{ color: "var(--accent)", animation: "spin 1s linear infinite" }} /> Saving…</>
-              ) : (
-                <><CheckCircle2 size={12} style={{ color: "var(--success)" }} /> Saved</>
-              )}
-            </div>
-          )}
-
-          {!collab && (
-            <span style={{ fontSize: 11, background: "var(--accent-soft)", color: "var(--accent)", padding: "2px 8px", borderRadius: 99 }}>
-              Connecting…
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 12,
+                color:
+                  "var(--text-muted)",
+              }}
+            >
+              <CheckCircle2
+                size={12}
+                style={{
+                  color:
+                    "var(--success)",
+                }}
+              />
+              Synced
             </span>
           )}
         </div>
       </div>
 
-      {/* ── Editor area ── */}
-      <div
-        style={{ flex: 1, overflowY: "auto", position: "relative" }}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleEditorMouseUp}
-      >
-        {activeUsers.map((u: PresenceUser) => (
-          <CursorOverlay key={u.user_id} user={u} />
-        ))}
+      {/* Editor */}
 
-        <div style={{ maxWidth: 860, margin: "0 auto", padding: "48px 64px" }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 860,
+            margin: "0 auto",
+            padding: "48px 64px",
+          }}
+        >
           <input
-            key={docId}
-            value={title ?? ""}
-            onChange={(e) => handleTitleChange(e.target.value)}
-            style={{
-              fontSize: 40, fontWeight: 800, letterSpacing: "-0.03em",
-              border: "none", outline: "none", width: "100%", marginBottom: 32,
-              color: "var(--text-primary)", background: "transparent",
-              fontFamily: "var(--font-display)",
-            }}
+            value={title}
+            onChange={(e) =>
+              handleTitleChange(
+                e.target.value,
+              )
+            }
             placeholder="Document Title"
+            style={{
+              width: "100%",
+              border: "none",
+              outline: "none",
+              background:
+                "transparent",
+              fontSize: 40,
+              fontWeight: 800,
+              marginBottom: 32,
+              color:
+                "var(--text-primary)",
+            }}
           />
-          <EditorContent editor={editor} />
+
+          <CollaborativeEditor ydoc={ydoc} />
         </div>
       </div>
-
-      {showAI && (
-        <AIDocumentAssistant
-          selectedText={selectedText}
-          onInsert={handleInsertAIResult}
-          onClose={() => setShowAI(false)}
-        />
-      )}
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
-}
-
-function CursorOverlay({ user: u }: { user: PresenceUser }) {
-  if (!u.cursor || (u.cursor.x === 0 && u.cursor.y === 0)) return null;
-  return (
-    <div style={{ position: "absolute", left: u.cursor.x, top: u.cursor.y, pointerEvents: "none", zIndex: 50, transform: "translate(-2px, -2px)" }}>
-      <svg width="14" height="18" viewBox="0 0 14 18" fill="none">
-        <path d="M0 0L0 14L4 10L7 17L9 16L6 9L11 9Z" fill={u.color ?? "#6c63ff"} />
-      </svg>
-      <div style={{ position: "absolute", left: 12, top: 0, background: u.color ?? "var(--accent)", color: "#fff", fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>
-        {u.name ?? "User"}
-      </div>
-    </div>
-  );
-}
-
-function ToolbarBtn({ children, active, onClick, title }: { children: React.ReactNode; active?: boolean; onClick: () => void; title?: string }) {
-  return (
-    <button onClick={onClick} title={title} style={{ padding: "4px 6px", borderRadius: 6, border: "none", cursor: "pointer", background: active ? "var(--accent-soft)" : "transparent", color: active ? "var(--accent)" : "var(--text-secondary)", display: "flex", alignItems: "center", transition: "background 0.1s" }}
-      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ToolbarDivider() {
-  return <div style={{ width: 1, height: 18, background: "var(--border)", margin: "0 2px" }} />;
 }
