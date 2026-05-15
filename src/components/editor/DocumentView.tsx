@@ -95,6 +95,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const providerRef = useRef<SupabaseProvider | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─────────────────────────────────────────────
   // Load document
@@ -222,23 +223,60 @@ export function DocumentView({ workspaceId, docId }: Props) {
 
   const saveTitle = useCallback(
     async (newTitle: string) => {
-      const { error } = await supabase
-        .from("documents")
-        .update({
+      const res = await fetch("/api/documents", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: docId,
           title: newTitle,
-          last_edited_by: user?.id,
-        })
-        .eq("id", docId);
+        }),
+      });
 
-      if (error) {
-        console.error(error);
-      } else {
+      if (!res.ok) {
+        throw new Error((await res.text()) || "Failed to save title");
+      }
+
+      const savedDoc = (await res.json()) as Document;
+
+      if (savedDoc) {
         updateDocument(docId, {
-          title: newTitle,
+          title: savedDoc.title,
+          updated_at: savedDoc.updated_at,
+          last_edited_by: savedDoc.last_edited_by,
         });
       }
     },
-    [docId, supabase, updateDocument, user?.id],
+    [docId, updateDocument],
+  );
+
+  const saveContent = useCallback(
+    async (docToSave: Y.Doc | null = ydocRef.current) => {
+      if (!docToSave) return;
+
+      const content = Array.from(Y.encodeStateAsUpdate(docToSave));
+
+      const res = await fetch("/api/documents", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: docId,
+          content,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error((await res.text()) || "Failed to save document");
+      }
+
+      const savedDoc = (await res.json()) as Document;
+
+      updateDocument(docId, {
+        content: savedDoc.content,
+        updated_at: savedDoc.updated_at,
+        last_edited_by: savedDoc.last_edited_by,
+      });
+    },
+    [docId, updateDocument],
   );
 
   const handleSaveDocument = useCallback(async () => {
@@ -248,15 +286,16 @@ export function DocumentView({ workspaceId, docId }: Props) {
       saveTimer.current = null;
     }
 
+    if (contentSaveTimer.current) {
+      clearTimeout(contentSaveTimer.current);
+      contentSaveTimer.current = null;
+    }
+
     setSaving(true);
 
     try {
       await saveTitle(title);
-
-      // ✅ FIX: Removed `await providerRef.current?.save()` — y-supabase
-      // does not expose a .save() method. Document body is synced
-      // automatically via the Realtime channel. Only the title needs
-      // an explicit save call via saveTitle().
+      await saveContent();
 
       setHasUnsavedTitle(false);
     } catch (error) {
@@ -264,7 +303,7 @@ export function DocumentView({ workspaceId, docId }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [saveTitle, title]);
+  }, [saveContent, saveTitle, title]);
 
   const handleBack = useCallback(() => {
     router.push(`/workspace/${workspaceId}`);
@@ -299,11 +338,51 @@ export function DocumentView({ workspaceId, docId }: Props) {
     }
 
     saveTimer.current = setTimeout(() => {
-      saveTitle(newTitle);
-      setHasUnsavedTitle(false);
-      saveTimer.current = null;
+      saveTitle(newTitle)
+        .then(() => {
+          setHasUnsavedTitle(false);
+        })
+        .catch((error) => {
+          console.error("Title auto-save failed:", error);
+        })
+        .finally(() => {
+          saveTimer.current = null;
+        });
     }, 1500);
   };
+
+  useEffect(() => {
+    if (!ydoc) return;
+
+    const handleUpdate = (_update: Uint8Array, origin: unknown) => {
+      if (origin === providerRef.current) return;
+
+      if (contentSaveTimer.current) {
+        clearTimeout(contentSaveTimer.current);
+      }
+
+      contentSaveTimer.current = setTimeout(() => {
+        saveContent(ydoc).catch((error) => {
+          console.error("Document auto-save failed:", error);
+        });
+        contentSaveTimer.current = null;
+      }, 1000);
+    };
+
+    ydoc.on("update", handleUpdate);
+
+    return () => {
+      ydoc.off("update", handleUpdate);
+
+      if (contentSaveTimer.current) {
+        clearTimeout(contentSaveTimer.current);
+        contentSaveTimer.current = null;
+        saveContent(ydoc).catch((error) => {
+          console.error("Document final save failed:", error);
+        });
+      }
+    };
+  }, [saveContent, ydoc]);
 
   // ─────────────────────────────────────────────
   // Loading

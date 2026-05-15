@@ -41,9 +41,33 @@ export async function PATCH(req: Request) {
   const body: {
     id: string;
     title?: string;
-    content?: Record<string, unknown>;
+    content?: unknown;
   } = await req.json();
+
+  if (!body.id) {
+    return new NextResponse("Document id required", { status: 400 });
+  }
+
   const supabase = createServerSupabaseClient();
+
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .select("workspace_id")
+    .eq("id", body.id)
+    .single();
+
+  if (documentError || !document) {
+    return new NextResponse("Document not found", { status: 404 });
+  }
+
+  const { data: member } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", document.workspace_id)
+    .eq("user_id", userId)
+    .single();
+
+  if (!member) return new NextResponse("Forbidden", { status: 403 });
 
   const { data, error } = await supabase
     .from("documents")
