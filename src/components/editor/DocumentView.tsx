@@ -12,6 +12,7 @@ import * as Y from "yjs";
 import SupabaseProvider from "y-supabase";
 
 import { useUser, useAuth } from "@clerk/nextjs";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import {
   ArrowLeft,
@@ -93,9 +94,9 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
 
   const providerRef = useRef<SupabaseProvider | null>(null);
+  const titleChannelRef = useRef<RealtimeChannel | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─────────────────────────────────────────────
   // Load document
@@ -136,6 +137,32 @@ export function DocumentView({ workspaceId, docId }: Props) {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, doc?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+
+    const channel = supabase
+      .channel(`doc-title-${docId}`)
+      .on("broadcast", { event: "title" }, ({ payload }) => {
+        const nextTitle = payload?.title;
+
+        if (payload?.userId === user.id || typeof nextTitle !== "string") {
+          return;
+        }
+
+        setTitle(nextTitle);
+        setHasUnsavedTitle(false);
+        updateDocument(docId, { title: nextTitle });
+      })
+      .subscribe();
+
+    titleChannelRef.current = channel;
+
+    return () => {
+      titleChannelRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [docId, supabase, updateDocument, user?.id]);
 
   // ─────────────────────────────────────────────
   // Setup Collaboration
@@ -189,6 +216,23 @@ export function DocumentView({ workspaceId, docId }: Props) {
 
         providerRef.current = provider;
         setYdoc(ydoc);
+
+        provider?.on?.("connect", () => {
+          setCollab(true);
+        });
+
+        provider?.on?.("status", (status: Array<{ status?: string }>) => {
+          setCollab(status.some((item) => item.status === "connected"));
+        });
+
+        provider?.on?.("disconnect", () => {
+          setCollab(false);
+        });
+
+        provider?.on?.("error", (error: unknown) => {
+          console.error("Collaboration provider error:", error);
+          setCollab(false);
+        });
 
         provider?.on?.("synced", () => {
           setCollab(true);
@@ -249,36 +293,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
     [docId, updateDocument],
   );
 
-  const saveContent = useCallback(
-    async (docToSave: Y.Doc | null = ydocRef.current) => {
-      if (!docToSave) return;
-
-      const content = Array.from(Y.encodeStateAsUpdate(docToSave));
-
-      const res = await fetch("/api/documents", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: docId,
-          content,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error((await res.text()) || "Failed to save document");
-      }
-
-      const savedDoc = (await res.json()) as Document;
-
-      updateDocument(docId, {
-        content: savedDoc.content,
-        updated_at: savedDoc.updated_at,
-        last_edited_by: savedDoc.last_edited_by,
-      });
-    },
-    [docId, updateDocument],
-  );
-
   const handleSaveDocument = useCallback(async () => {
     // Clear any pending auto-save timer since we're saving now
     if (saveTimer.current) {
@@ -286,24 +300,17 @@ export function DocumentView({ workspaceId, docId }: Props) {
       saveTimer.current = null;
     }
 
-    if (contentSaveTimer.current) {
-      clearTimeout(contentSaveTimer.current);
-      contentSaveTimer.current = null;
-    }
-
     setSaving(true);
 
     try {
-      await saveTitle(title);
-      await saveContent();
-
+      await Promise.all([saveTitle(title), providerRef.current?.save()]);
       setHasUnsavedTitle(false);
     } catch (error) {
       console.error("Document save failed:", error);
     } finally {
       setSaving(false);
     }
-  }, [saveContent, saveTitle, title]);
+  }, [saveTitle, title]);
 
   const handleBack = useCallback(() => {
     router.push(`/workspace/${workspaceId}`);
@@ -329,6 +336,15 @@ export function DocumentView({ workspaceId, docId }: Props) {
     setTitle(newTitle);
     setHasUnsavedTitle(true);
 
+    titleChannelRef.current?.send({
+      type: "broadcast",
+      event: "title",
+      payload: {
+        title: newTitle,
+        userId: user?.id,
+      },
+    });
+
     // ✅ FIX: Restart the debounce timer on every keystroke so the title
     // is auto-saved 1.5s after the user stops typing. Previously the timer
     // was cleared but never restarted, so unsaved title changes were lost
@@ -350,39 +366,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
         });
     }, 1500);
   };
-
-  useEffect(() => {
-    if (!ydoc) return;
-
-    const handleUpdate = (_update: Uint8Array, origin: unknown) => {
-      if (origin === providerRef.current) return;
-
-      if (contentSaveTimer.current) {
-        clearTimeout(contentSaveTimer.current);
-      }
-
-      contentSaveTimer.current = setTimeout(() => {
-        saveContent(ydoc).catch((error) => {
-          console.error("Document auto-save failed:", error);
-        });
-        contentSaveTimer.current = null;
-      }, 1000);
-    };
-
-    ydoc.on("update", handleUpdate);
-
-    return () => {
-      ydoc.off("update", handleUpdate);
-
-      if (contentSaveTimer.current) {
-        clearTimeout(contentSaveTimer.current);
-        contentSaveTimer.current = null;
-        saveContent(ydoc).catch((error) => {
-          console.error("Document final save failed:", error);
-        });
-      }
-    };
-  }, [saveContent, ydoc]);
 
   // ─────────────────────────────────────────────
   // Loading
