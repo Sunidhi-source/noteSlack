@@ -10,19 +10,11 @@ export function useMessages(channelId: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchInitial = useCallback(async () => {
-    if (!channelId) return;
-    setLoading(true);
-    const { data } = await supabase
-      .from("messages")
-      .select("*, users(full_name, avatar_url)")
-      .eq("channel_id", channelId)
-      .order("created_at", { ascending: true });
-    setMessages((data as Message[]) ?? []);
-    setLoading(false);
-  }, [channelId, supabase]);
+  // Keep a ref to setMessages so the subscription closure never goes stale
+  const setMessagesRef = useRef(setMessages);
+  setMessagesRef.current = setMessages;
 
-  // Exposed so ChatView can do optimistic inserts immediately on send
+  // addMessage: push a new message, deduplicated
   const addMessage = useCallback((msg: Message) => {
     setMessages((prev) => {
       if (prev.find((m) => m.id === msg.id)) return prev;
@@ -30,49 +22,60 @@ export function useMessages(channelId: string) {
     });
   }, []);
 
-  // Replace a temp optimistic message with the real one from DB.
-  // Pass realMsg.id === "__remove__" to delete the temp message (e.g. on send failure).
+  // replaceMessage: swap tempId → real message, or remove if id === "__remove__"
   const replaceMessage = useCallback((tempId: string, realMsg: Message) => {
-    if (realMsg.id === "__remove__") {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-    } else {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? realMsg : m))
-      );
-    }
+    setMessages((prev) => {
+      if (realMsg.id === "__remove__") return prev.filter((m) => m.id !== tempId);
+      // If the real message already exists (realtime beat us), just remove the temp
+      if (prev.find((m) => m.id === realMsg.id)) return prev.filter((m) => m.id !== tempId);
+      return prev.map((m) => (m.id === tempId ? realMsg : m));
+    });
   }, []);
 
   useEffect(() => {
     if (!channelId) return;
 
-    fetchInitial();
+    let cancelled = false;
 
+    // Initial load
+    setLoading(true);
+    supabase
+      .from("messages")
+      .select("*, users(full_name, avatar_url)")
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setMessagesRef.current((data as Message[]) ?? []);
+        setLoading(false);
+      });
+
+    // Realtime subscription
     const sub = supabase
       .channel(`messages-${channelId}-${Date.now()}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         async (payload) => {
-          if (!payload.new) return;
-          const newMsg = payload.new as Message;
-          // If we already have this ID (optimistic insert), skip — don't fetch again
-          setMessages((prev) => {
-            if (prev.find((m) => m.id === newMsg.id)) return prev;
-            // We don't have it yet (came from another user) — fetch with user join
+          if (cancelled || !payload.new) return;
+          const newId = (payload.new as Message).id;
+          // Skip if we already have it (our own optimistic message was confirmed)
+          setMessagesRef.current((prev) => {
+            if (prev.find((m) => m.id === newId)) return prev; // already have it
+            // Not in list — fetch from another user
             supabase
               .from("messages")
               .select("*, users(full_name, avatar_url)")
-              .eq("id", newMsg.id)
+              .eq("id", newId)
               .single()
               .then(({ data: fullMsg }) => {
-                if (fullMsg) {
-                  setMessages((p) => {
-                    if (p.find((m) => m.id === (fullMsg as Message).id)) return p;
-                    return [...p, fullMsg as Message];
-                  });
-                }
+                if (cancelled || !fullMsg) return;
+                setMessagesRef.current((p) => {
+                  if (p.find((m) => m.id === (fullMsg as Message).id)) return p;
+                  return [...p, fullMsg as Message];
+                });
               });
-            return prev; // return unchanged; the async above will update
+            return prev; // unchanged for now; async above will add it
           });
         },
       )
@@ -80,14 +83,14 @@ export function useMessages(channelId: string) {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         async (payload) => {
-          if (!payload.new) return;
+          if (cancelled || !payload.new) return;
           const { data: fullMsg } = await supabase
             .from("messages")
             .select("*, users(full_name, avatar_url)")
             .eq("id", (payload.new as Message).id)
             .single();
-          if (fullMsg) {
-            setMessages((prev) =>
+          if (!cancelled && fullMsg) {
+            setMessagesRef.current((prev) =>
               prev.map((m) => m.id === (fullMsg as Message).id ? (fullMsg as Message) : m),
             );
           }
@@ -97,27 +100,38 @@ export function useMessages(channelId: string) {
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         (payload) => {
+          if (cancelled) return;
           const oldId = (payload.old as Partial<Message>)?.id;
-          if (oldId) setMessages((prev) => prev.filter((m) => m.id !== oldId));
+          if (oldId) setMessagesRef.current((prev) => prev.filter((m) => m.id !== oldId));
         },
       )
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          fetchInitial();
-        }
-      });
+      .subscribe();
 
-    return () => { supabase.removeChannel(sub); };
-  }, [channelId, supabase, fetchInitial]);
-
-  // Re-sync when tab becomes visible
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === "visible" && channelId) fetchInitial();
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(sub);
     };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [channelId, fetchInitial]);
+  // Only re-run when the channel changes — NOT when supabase reference changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
+
+  // Re-sync when tab becomes visible (catch missed events while hidden)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || !channelId) return;
+      supabase
+        .from("messages")
+        .select("*, users(full_name, avatar_url)")
+        .eq("channel_id", channelId)
+        .order("created_at", { ascending: true })
+        .then(({ data }) => {
+          if (data) setMessagesRef.current(data as Message[]);
+        });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
 
   return { messages, loading, addMessage, replaceMessage };
 }
@@ -143,7 +157,6 @@ export function useTypingIndicator(channelId: string) {
 
   useEffect(() => {
     if (!channelId) return;
-
     const ch = supabase
       .channel(`typing:${channelId}`)
       .on("broadcast", { event: "typing" }, (payload) => {
@@ -159,10 +172,10 @@ export function useTypingIndicator(channelId: string) {
         }, 3000);
       })
       .subscribe();
-
     channelRef.current = ch;
     return () => { supabase.removeChannel(ch); channelRef.current = null; };
-  }, [channelId, supabase, user?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId, user?.id]);
 
   return { typingUsers, sendTyping };
 }
@@ -174,10 +187,10 @@ export function useThreadMessages(parentMessageId: string | null) {
 
   useEffect(() => {
     if (!parentMessageId) {
-      queueMicrotask(() => setReplies([]));
+      setReplies([]);
       return () => {};
     }
-    queueMicrotask(() => setLoading(true));
+    setLoading(true);
 
     supabase
       .from("messages")
@@ -217,7 +230,8 @@ export function useThreadMessages(parentMessageId: string | null) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [parentMessageId, supabase]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parentMessageId]);
 
   return { replies, loading };
 }
