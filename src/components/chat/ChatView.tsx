@@ -96,30 +96,40 @@ export function ChatView({ workspaceId, channelId }: Props) {
       edited_at: null,
       parent_message_id: null,
       is_pinned: false,
-      users: { full_name: user.fullName ?? "You", avatar_url: user.imageUrl ?? null },
+      users: { full_name: user.fullName ?? "You", avatar_url: null },
     };
     addMessage(optimisticMsg);
     setJustSentIds((prev) => new Set([...prev, tempId]));
 
-    // Persist to DB and swap temp ID with the real confirmed message
-    const { data } = await supabase
+    // Persist to DB, then fetch the full message with user join to replace the temp
+    const { data: inserted } = await supabase
       .from("messages")
       .insert({ channel_id: channelId, user_id: user.id, content })
-      .select("*, users(full_name, avatar_url)")
+      .select("id")
       .single();
 
-    if (data) {
-      replaceMessage(tempId, data as Message);
+    if (inserted?.id) {
+      // Fetch with user join separately — more reliable than chaining after insert
+      const { data: fullMsg } = await supabase
+        .from("messages")
+        .select("*, users(full_name, avatar_url)")
+        .eq("id", inserted.id)
+        .single();
+
+      const confirmed = (fullMsg ?? { ...optimisticMsg, id: inserted.id }) as Message;
+      replaceMessage(tempId, confirmed);
       setJustSentIds((prev) => {
         const n = new Set(prev);
         n.delete(tempId);
-        n.add((data as Message).id);
+        n.add(confirmed.id);
         return n;
       });
-      setTimeout(() => setJustSentIds((prev) => { const n = new Set(prev); n.delete((data as Message).id); return n; }), 1500);
+      setTimeout(() => setJustSentIds((prev) => { const n = new Set(prev); n.delete(confirmed.id); return n; }), 1500);
     } else {
-      // DB failed — silently remove the optimistic message
+      // DB failed — remove the optimistic message so UI is consistent
       setJustSentIds((prev) => { const n = new Set(prev); n.delete(tempId); return n; });
+      // Also remove from messages list
+      replaceMessage(tempId, { ...optimisticMsg, id: "__remove__" });
     }
 
     setSending(false);
@@ -413,7 +423,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
                         </p>
                       )}
 
-                      <MessageReactions messageId={msg.id} />
+                      {!msg.id.startsWith("temp-") && <MessageReactions messageId={msg.id} />}
                     </div>
 
                     {/* Hover actions */}

@@ -30,11 +30,16 @@ export function useMessages(channelId: string) {
     });
   }, []);
 
-  // Replace a temp optimistic message with the real one from DB
+  // Replace a temp optimistic message with the real one from DB.
+  // Pass realMsg.id === "__remove__" to delete the temp message (e.g. on send failure).
   const replaceMessage = useCallback((tempId: string, realMsg: Message) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === tempId ? realMsg : m))
-    );
+    if (realMsg.id === "__remove__") {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    } else {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? realMsg : m))
+      );
+    }
   }, []);
 
   useEffect(() => {
