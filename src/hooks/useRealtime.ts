@@ -22,32 +22,53 @@ export function useMessages(channelId: string) {
     setLoading(false);
   }, [channelId, supabase]);
 
+  // Exposed so ChatView can do optimistic inserts immediately on send
+  const addMessage = useCallback((msg: Message) => {
+    setMessages((prev) => {
+      if (prev.find((m) => m.id === msg.id)) return prev;
+      return [...prev, msg];
+    });
+  }, []);
+
+  // Replace a temp optimistic message with the real one from DB
+  const replaceMessage = useCallback((tempId: string, realMsg: Message) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === tempId ? realMsg : m))
+    );
+  }, []);
+
   useEffect(() => {
     if (!channelId) return;
 
     fetchInitial();
 
-    // Unique channel name per mount to avoid stale subscriptions
-    const realtimeChannelName = `messages-${channelId}-${Date.now()}`;
-
     const sub = supabase
-      .channel(realtimeChannelName)
+      .channel(`messages-${channelId}-${Date.now()}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         async (payload) => {
           if (!payload.new) return;
-          const { data: fullMsg } = await supabase
-            .from("messages")
-            .select("*, users(full_name, avatar_url)")
-            .eq("id", (payload.new as Message).id)
-            .single();
-          if (fullMsg) {
-            setMessages((prev) => {
-              if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
-              return [...prev, fullMsg as Message];
-            });
-          }
+          const newMsg = payload.new as Message;
+          // If we already have this ID (optimistic insert), skip — don't fetch again
+          setMessages((prev) => {
+            if (prev.find((m) => m.id === newMsg.id)) return prev;
+            // We don't have it yet (came from another user) — fetch with user join
+            supabase
+              .from("messages")
+              .select("*, users(full_name, avatar_url)")
+              .eq("id", newMsg.id)
+              .single()
+              .then(({ data: fullMsg }) => {
+                if (fullMsg) {
+                  setMessages((p) => {
+                    if (p.find((m) => m.id === (fullMsg as Message).id)) return p;
+                    return [...p, fullMsg as Message];
+                  });
+                }
+              });
+            return prev; // return unchanged; the async above will update
+          });
         },
       )
       .on(
@@ -77,7 +98,6 @@ export function useMessages(channelId: string) {
       )
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn("[useMessages] Realtime issue:", status, "- refetching");
           fetchInitial();
         }
       });
@@ -85,7 +105,7 @@ export function useMessages(channelId: string) {
     return () => { supabase.removeChannel(sub); };
   }, [channelId, supabase, fetchInitial]);
 
-  // Re-sync when tab becomes visible (catches missed events while tab was hidden)
+  // Re-sync when tab becomes visible
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === "visible" && channelId) fetchInitial();
@@ -94,7 +114,7 @@ export function useMessages(channelId: string) {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [channelId, fetchInitial]);
 
-  return { messages, loading };
+  return { messages, loading, addMessage, replaceMessage };
 }
 
 // ── useTypingIndicator ────────────────────────────────────────
@@ -136,7 +156,6 @@ export function useTypingIndicator(channelId: string) {
       .subscribe();
 
     channelRef.current = ch;
-
     return () => { supabase.removeChannel(ch); channelRef.current = null; };
   }, [channelId, supabase, user?.id]);
 

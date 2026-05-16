@@ -27,7 +27,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
   useWorkspace(workspaceId);
   const { user }    = useUser();
   const supabase    = useSupabaseClient();
-  const { messages, loading } = useMessages(channelId);
+  const { messages, loading, addMessage, replaceMessage } = useMessages(channelId);
   const { typingUsers, sendTyping } = useTypingIndicator(channelId);
   const { channels, members }  = useWorkspaceStore();
   const channel = channels.find((c) => c.id === channelId);
@@ -84,17 +84,46 @@ export function ChatView({ workspaceId, channelId }: Props) {
     const content = input.trim();
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    // Optimistic insert — show message instantly before DB confirms
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      channel_id: channelId,
+      user_id: user.id,
+      content,
+      created_at: new Date().toISOString(),
+      edited_at: null,
+      parent_message_id: null,
+      is_pinned: false,
+      users: { full_name: user.fullName ?? "You", avatar_url: user.imageUrl ?? null },
+    };
+    addMessage(optimisticMsg);
+    setJustSentIds((prev) => new Set([...prev, tempId]));
+
+    // Persist to DB and swap temp ID with the real confirmed message
     const { data } = await supabase
       .from("messages")
       .insert({ channel_id: channelId, user_id: user.id, content })
-      .select("id")
+      .select("*, users(full_name, avatar_url)")
       .single();
-    if (data?.id) {
-      setJustSentIds((prev) => new Set([...prev, data.id]));
-      setTimeout(() => setJustSentIds((prev) => { const n = new Set(prev); n.delete(data.id); return n; }), 1500);
+
+    if (data) {
+      replaceMessage(tempId, data as Message);
+      setJustSentIds((prev) => {
+        const n = new Set(prev);
+        n.delete(tempId);
+        n.add((data as Message).id);
+        return n;
+      });
+      setTimeout(() => setJustSentIds((prev) => { const n = new Set(prev); n.delete((data as Message).id); return n; }), 1500);
+    } else {
+      // DB failed — silently remove the optimistic message
+      setJustSentIds((prev) => { const n = new Set(prev); n.delete(tempId); return n; });
     }
+
     setSending(false);
-  }, [input, user, sending, supabase, channelId]);
+  }, [input, user, sending, supabase, channelId, addMessage, replaceMessage]);
 
   const handleEdit = async (messageId: string) => {
     if (!editContent.trim()) return;
