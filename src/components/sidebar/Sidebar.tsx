@@ -5,13 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton, useUser } from "@clerk/nextjs";
 import {
-  Hash,
-  FileText,
-  Plus,
-  ChevronDown,
-  ChevronRight,
-  Search,
-  UserPlus,
+  Hash, FileText, Plus, ChevronDown, ChevronRight,
+  Search, UserPlus, Home,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/store/workspace";
 import { CreateChannelModal } from "./CreateChannelModal";
@@ -22,12 +17,11 @@ import { NotificationBell } from "@/components/ui/NotificationBell";
 import InviteMemberModal from "./InviteMemberModal";
 import { generateUserColor, getInitials } from "@/lib/utils";
 import type { Channel, Document, User } from "@/types";
- 
+
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
-  const { channels, documents, currentWorkspace, members, unreadCounts } =
-    useWorkspaceStore();
+  const { channels, documents, currentWorkspace, members, unreadCounts } = useWorkspaceStore();
 
   const [channelsOpen, setChannelsOpen] = useState(true);
   const [docsOpen, setDocsOpen] = useState(true);
@@ -35,13 +29,14 @@ export function Sidebar() {
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showCreateDoc, setShowCreateDoc] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  // FIX: wire up invite modal state
   const [showInvite, setShowInvite] = useState(false);
 
   const workspaceId = currentWorkspace?.id;
   if (!workspaceId) return null;
 
   const dmMembers = (members ?? []).filter((m: User) => m.id !== user?.id);
+  const homeHref = `/workspace/${workspaceId}`;
+  const isHome = pathname === homeHref;
 
   return (
     <>
@@ -49,13 +44,21 @@ export function Sidebar() {
         style={{
           width: "var(--sidebar-width)",
           height: "100vh",
-          background: "var(--bg-surface)",
+          background: "linear-gradient(180deg, #0c0e1a 0%, #090b14 100%)",
           borderRight: "1px solid var(--border)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
+          position: "relative",
         }}
       >
+        {/* Subtle glow at top */}
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0, height: 120,
+          background: "radial-gradient(ellipse at 50% 0%, rgba(108,99,255,0.07) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }} />
+
         {/* Header */}
         <div
           style={{
@@ -65,79 +68,95 @@ export function Sidebar() {
             alignItems: "center",
             gap: 8,
             borderBottom: "1px solid var(--border)",
+            position: "relative",
+            zIndex: 1,
           }}
         >
           <WorkspaceSwitcher />
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
-            {/* FIX: Invite member button in header for quick access */}
-            <button
-              onClick={() => setShowInvite(true)}
-              title="Invite member"
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--text-secondary)",
-                display: "flex",
-                alignItems: "center",
-                padding: "7px",
-                borderRadius: "var(--radius-sm)",
-                transition: "color 0.15s, background 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "var(--text-primary)";
-                e.currentTarget.style.background = "var(--bg-overlay)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "var(--text-secondary)";
-                e.currentTarget.style.background = "none";
-              }}
-            >
-              <UserPlus size={16} />
-            </button>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 2 }}>
+            <IconBtn title="Invite member" onClick={() => setShowInvite(true)}>
+              <UserPlus size={15} />
+            </IconBtn>
             <NotificationBell />
           </div>
         </div>
 
-        {/* Search button */}
+        {/* Search */}
         <button
           onClick={() => setShowSearch(true)}
           style={{
-            margin: "8px 10px 4px",
-            background: "var(--bg-overlay)",
+            margin: "10px 10px 2px",
+            background: "rgba(255,255,255,0.03)",
             border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: "6px 10px",
+            borderRadius: 10,
+            padding: "7px 12px",
             display: "flex",
             alignItems: "center",
-            gap: 6,
+            gap: 8,
             cursor: "pointer",
             color: "var(--text-muted)",
-            transition: "border-color 0.15s",
+            transition: "all 0.2s",
+            position: "relative",
+            zIndex: 1,
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.borderColor = "var(--accent)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.borderColor = "var(--border)")
-          }
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "var(--accent)";
+            e.currentTarget.style.background = "var(--accent-soft)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "var(--border)";
+            e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+          }}
         >
-          <Search size={12} />
-          <span style={{ fontSize: 12, flex: 1, textAlign: "left" }}>
-            Search…
-          </span>
-          <span style={{ fontSize: 10, opacity: 0.6 }}>⌘K</span>
+          <Search size={13} style={{ color: "var(--text-muted)" }} />
+          <span style={{ fontSize: 12, flex: 1, textAlign: "left", color: "var(--text-muted)" }}>Search workspace…</span>
+          <span style={{ fontSize: 10, opacity: 0.5, background: "var(--bg-overlay)", padding: "2px 6px", borderRadius: 4, fontFamily: "var(--font-mono)" }}>⌘K</span>
         </button>
 
+        {/* Home link */}
+        <Link
+          href={homeHref}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            padding: "7px 12px",
+            margin: "4px 10px 0",
+            borderRadius: 8,
+            textDecoration: "none",
+            color: isHome ? "var(--accent)" : "var(--text-secondary)",
+            background: isHome ? "var(--accent-soft)" : "transparent",
+            fontSize: 13,
+            fontWeight: isHome ? 600 : 400,
+            transition: "all 0.15s",
+            border: isHome ? "1px solid rgba(108,99,255,0.2)" : "1px solid transparent",
+            position: "relative",
+            zIndex: 1,
+          }}
+          onMouseEnter={(e) => {
+            if (!isHome) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+          }}
+          onMouseLeave={(e) => {
+            if (!isHome) (e.currentTarget as HTMLElement).style.background = "transparent";
+          }}
+        >
+          <Home size={14} style={{ color: isHome ? "var(--accent)" : "var(--text-muted)", flexShrink: 0 }} />
+          <span>Home</span>
+          {isHome && (
+            <span style={{
+              marginLeft: "auto",
+              width: 6, height: 6,
+              borderRadius: "50%",
+              background: "var(--accent)",
+              boxShadow: "0 0 6px var(--accent)",
+            }} />
+          )}
+        </Link>
+
         {/* Content */}
-        <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8 }}>
-          {/* ── Channels ── */}
-          <SectionHeader
-            label="Channels"
-            isOpen={channelsOpen}
-            onToggle={() => setChannelsOpen((v) => !v)}
-            onAdd={() => setShowCreateChannel(true)}
-          />
+        <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8, position: "relative", zIndex: 1 }}>
+          {/* Channels */}
+          <SectionHeader label="Channels" isOpen={channelsOpen} onToggle={() => setChannelsOpen((v) => !v)} onAdd={() => setShowCreateChannel(true)} />
           {channelsOpen &&
             channels.map((ch: Channel) => (
               <SidebarItem
@@ -145,22 +164,13 @@ export function Sidebar() {
                 href={`/workspace/${workspaceId}/channel/${ch.id}`}
                 label={ch.name}
                 icon={<Hash size={13} />}
-                isActive={
-                  pathname === `/workspace/${workspaceId}/channel/${ch.id}`
-                }
+                isActive={pathname === `/workspace/${workspaceId}/channel/${ch.id}`}
                 badge={unreadCounts?.[ch.id] || 0}
               />
             ))}
 
-          {/* ── Direct Messages ── 
-              FIX: added onAdd to open invite modal so users can add people
-              right from the DMs section */}
-          <SectionHeader
-            label="Direct Messages"
-            isOpen={dmsOpen}
-            onToggle={() => setDmsOpen((v) => !v)}
-            onAdd={() => setShowInvite(true)}
-          />
+          {/* Direct Messages */}
+          <SectionHeader label="Direct Messages" isOpen={dmsOpen} onToggle={() => setDmsOpen((v) => !v)} onAdd={() => setShowInvite(true)} />
           {dmsOpen &&
             dmMembers.map((member: User) => {
               const color = generateUserColor(member.id);
@@ -170,51 +180,30 @@ export function Sidebar() {
                   key={member.id}
                   href={`/workspace/${workspaceId}/dm/${member.id}`}
                   label={member.full_name ?? "Teammate"}
-                  isActive={
-                    pathname === `/workspace/${workspaceId}/dm/${member.id}`
-                  }
+                  isActive={pathname === `/workspace/${workspaceId}/dm/${member.id}`}
                   icon={
-                    <div
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: "50%",
-                        background: color,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 8,
-                        color: "#fff",
-                        fontWeight: 700,
-                        flexShrink: 0,
-                      }}
-                    >
+                    <div style={{
+                      width: 18, height: 18, borderRadius: "50%", background: color,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0,
+                    }}>
                       {initials}
                     </div>
                   }
                   suffix={
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: "50%",
-                        background: "var(--success)",
-                        display: "inline-block",
-                        border: "1.5px solid var(--bg-surface)",
-                      }}
-                    />
+                    <span style={{
+                      width: 7, height: 7, borderRadius: "50%",
+                      background: "var(--success)", display: "inline-block",
+                      border: "1.5px solid #0c0e1a",
+                      boxShadow: "0 0 6px var(--success)",
+                    }} />
                   }
                 />
               );
             })}
 
-          {/* ── Documents ── */}
-          <SectionHeader
-            label="Documents"
-            isOpen={docsOpen}
-            onToggle={() => setDocsOpen((v) => !v)}
-            onAdd={() => setShowCreateDoc(true)}
-          />
+          {/* Documents */}
+          <SectionHeader label="Documents" isOpen={docsOpen} onToggle={() => setDocsOpen((v) => !v)} onAdd={() => setShowCreateDoc(true)} />
           {docsOpen &&
             documents.map((doc: Document) => (
               <SidebarItem
@@ -222,14 +211,12 @@ export function Sidebar() {
                 href={`/workspace/${workspaceId}/docs/${doc.id}`}
                 label={doc.title || "Untitled"}
                 icon={<FileText size={13} />}
-                isActive={
-                  pathname === `/workspace/${workspaceId}/docs/${doc.id}`
-                }
+                isActive={pathname === `/workspace/${workspaceId}/docs/${doc.id}`}
               />
             ))}
         </div>
 
-        {/* Footer — clicking the user area goes to your own profile */}
+        {/* Footer */}
         <div
           style={{
             padding: "10px 12px",
@@ -237,206 +224,116 @@ export function Sidebar() {
             display: "flex",
             alignItems: "center",
             gap: 10,
+            background: "rgba(0,0,0,0.2)",
+            position: "relative",
+            zIndex: 1,
           }}
         >
           <UserButton />
-          <Link
-            href={`/workspace/${workspaceId}/profile/${user?.id}`}
-            style={{ flex: 1, minWidth: 0, textDecoration: "none" }}
-          >
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--text-primary)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+          <Link href={`/workspace/${workspaceId}/profile/${user?.id}`} style={{ flex: 1, minWidth: 0, textDecoration: "none" }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {user?.fullName ?? "User"}
             </p>
-            <p style={{ fontSize: 10, color: "var(--success)" }}>● Active</p>
+            <p style={{ fontSize: 10, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)", display: "inline-block", boxShadow: "0 0 6px var(--success)", animation: "pulse-glow 2s infinite" }} />
+              Active
+            </p>
           </Link>
         </div>
       </aside>
 
-      {/* Modals */}
-      {showCreateChannel && (
-        <CreateChannelModal
-          workspaceId={workspaceId}
-          onClose={() => setShowCreateChannel(false)}
-        />
-      )}
-      {showCreateDoc && (
-        <CreateDocModal
-          workspaceId={workspaceId}
-          onClose={() => setShowCreateDoc(false)}
-        />
-      )}
-      {showSearch && (
-        <SearchModal
-          workspaceId={workspaceId}
-          onClose={() => setShowSearch(false)}
-        />
-      )}
-      {/* FIX: invite modal now properly wired */}
-      {showInvite && (
-        <InviteMemberModal
-          workspaceId={workspaceId}
-          onClose={() => setShowInvite(false)}
-        />
-      )}
+      {showCreateChannel && <CreateChannelModal workspaceId={workspaceId} onClose={() => setShowCreateChannel(false)} />}
+      {showCreateDoc && <CreateDocModal workspaceId={workspaceId} onClose={() => setShowCreateDoc(false)} />}
+      {showSearch && <SearchModal workspaceId={workspaceId} onClose={() => setShowSearch(false)} />}
+      {showInvite && <InviteMemberModal workspaceId={workspaceId} onClose={() => setShowInvite(false)} />}
     </>
   );
 }
 
-/* ── Helpers ── */
+function IconBtn({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        background: "none", border: "none", cursor: "pointer",
+        color: "var(--text-muted)", display: "flex", alignItems: "center",
+        padding: "6px", borderRadius: 7, transition: "all 0.15s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
+    >
+      {children}
+    </button>
+  );
+}
 
-function SectionHeader({
-  label,
-  isOpen,
-  onToggle,
-  onAdd,
-}: {
-  label: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  onAdd?: () => void;
+function SectionHeader({ label, isOpen, onToggle, onAdd }: {
+  label: string; isOpen: boolean; onToggle: () => void; onAdd?: () => void;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        padding: "10px 12px 4px",
-        gap: 4,
-      }}
-    >
+    <div style={{ display: "flex", alignItems: "center", padding: "12px 12px 3px", gap: 4 }}>
       <button
         onClick={onToggle}
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          color: "var(--text-muted)",
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
-          flex: 1,
-          padding: 0,
+          display: "flex", alignItems: "center", gap: 4,
+          background: "none", border: "none", cursor: "pointer",
+          color: "var(--text-muted)", fontSize: 10, fontWeight: 700,
+          letterSpacing: "0.08em", textTransform: "uppercase", flex: 1, padding: 0,
+          transition: "color 0.15s",
         }}
+        onMouseEnter={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
+        onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
       >
-        {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         {label}
       </button>
       {onAdd && (
         <button
           onClick={onAdd}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-muted)",
-            borderRadius: 4,
-            padding: "2px",
-            display: "flex",
-            alignItems: "center",
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.color = "var(--text-primary)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.color = "var(--text-muted)")
-          }
+          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", borderRadius: 4, padding: "2px", display: "flex", alignItems: "center", transition: "color 0.15s" }}
+          onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
+          onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
         >
-          <Plus size={14} />
+          <Plus size={13} />
         </button>
       )}
     </div>
   );
 }
 
-function SidebarItem({
-  href,
-  label,
-  icon,
-  isActive,
-  badge,
-  suffix,
-}: {
-  href: string;
-  label: string;
-  icon?: React.ReactNode;
-  isActive: boolean;
-  badge?: number;
-  suffix?: React.ReactNode;
+function SidebarItem({ href, label, icon, isActive, badge, suffix }: {
+  href: string; label: string; icon?: React.ReactNode;
+  isActive: boolean; badge?: number; suffix?: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "5px 12px",
-        background: isActive ? "var(--accent-soft)" : "transparent",
-        borderLeft: isActive
-          ? "2px solid var(--accent)"
-          : "2px solid transparent",
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "5px 10px 5px 14px",
+        background: isActive ? "linear-gradient(90deg, rgba(108,99,255,0.12) 0%, transparent 100%)" : "transparent",
+        borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
         textDecoration: "none",
         color: isActive ? "var(--accent)" : "var(--text-secondary)",
         fontSize: 13,
         fontWeight: isActive ? 600 : 400,
-        transition: "background 0.1s",
-        borderRadius: "0 6px 6px 0",
-        marginRight: 8,
+        transition: "all 0.15s",
+        borderRadius: "0 8px 8px 0",
+        marginRight: 6,
       }}
-      onMouseEnter={(e) => {
-        if (!isActive)
-          (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive)
-          (e.currentTarget as HTMLElement).style.background = "transparent";
-      }}
+      onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)"; }}
+      onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
     >
-      <span
-        style={{
-          color: isActive ? "var(--accent)" : "var(--text-muted)",
-          flexShrink: 0,
-        }}
-      >
-        {icon}
-      </span>
-      <span
-        style={{
-          flex: 1,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {label}
-      </span>
+      <span style={{ color: isActive ? "var(--accent)" : "var(--text-muted)", flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       {suffix}
       {(badge ?? 0) > 0 && (
-        <span
-          style={{
-            background: "var(--accent)",
-            color: "#fff",
-            fontSize: 9,
-            fontWeight: 700,
-            borderRadius: 99,
-            padding: "1px 5px",
-            minWidth: 16,
-            textAlign: "center",
-          }}
-        >
+        <span style={{
+          background: "var(--accent)", color: "#fff", fontSize: 9, fontWeight: 700,
+          borderRadius: 99, padding: "1px 6px", minWidth: 18, textAlign: "center",
+          boxShadow: "0 0 8px var(--accent-glow)",
+        }}>
           {(badge ?? 0) > 99 ? "99+" : (badge ?? 0)}
         </span>
       )}

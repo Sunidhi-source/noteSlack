@@ -1,38 +1,47 @@
-@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Fira+Code:wght@400;500&display=swap");
 
 @import "tailwindcss";
 
 :root {
-  /* Core palette — deep ink + electric accents */
-  --bg-base: #0c0d10;
-  --bg-surface: #13151a;
-  --bg-overlay: #1a1d24;
-  --bg-hover: #1f2330;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-accent: rgba(255, 255, 255, 0.12);
+  /* Dark ink palette */
+  --bg-base: #09090e;
+  --bg-surface: #0e101a;
+  --bg-overlay: #141620;
+  --bg-hover: #1a1d2e;
+  --border: rgba(255, 255, 255, 0.055);
+  --border-accent: rgba(255, 255, 255, 0.1);
 
-  --text-primary: #f0f1f5;
-  --text-secondary: #8a8fa8;
-  --text-muted: #4a4f65;
+  --text-primary: #eceef5;
+  --text-secondary: #7c82a0;
+  --text-muted: #3e4460;
 
+  /* Electric violet + emerald accent */
   --accent: #6c63ff;
-  --accent-glow: rgba(108, 99, 255, 0.25);
-  --accent-soft: rgba(108, 99, 255, 0.12);
-  --accent-hover: #7b73ff;
+  --accent-glow: rgba(108, 99, 255, 0.3);
+  --accent-soft: rgba(108, 99, 255, 0.1);
+  --accent-hover: #8178ff;
+  --accent-2: #22c986;
+  --accent-2-soft: rgba(34, 201, 134, 0.1);
 
   --success: #22c986;
   --warning: #f5a623;
   --danger: #ff4d6a;
 
-  --sidebar-width: 260px;
-  --header-h: 52px;
+  --sidebar-width: 268px;
+  --header-h: 54px;
 
   --font-display: "Syne", sans-serif;
   --font-body: "DM Sans", sans-serif;
+  --font-mono: "Fira Code", monospace;
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  /* Glass effect */
+  --glass: rgba(255,255,255,0.03);
+  --glass-border: rgba(255,255,255,0.07);
 }
 
 * {
@@ -41,8 +50,7 @@
   padding: 0;
 }
 
-html,
-body {
+html, body {
   height: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
@@ -52,82 +60,103 @@ body {
 }
 
 /* Scrollbar */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-accent);
-  border-radius: 99px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
 
-/* Selection */
-::selection {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-}
+::selection { background: var(--accent-soft); color: var(--text-primary); }
 
-/* Typography */
-.font-display {
-  font-family: var(--font-display);
-}
+.font-display { font-family: var(--font-display); }
 
-/* Focus ring */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 
-/* Animations */
+/* ── Animations ── */
 @keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes pulse-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 var(--accent-glow);
-  }
-  50% {
-    box-shadow: 0 0 0 6px transparent;
-  }
+  0%, 100% { box-shadow: 0 0 4px var(--success); opacity: 1; }
+  50% { box-shadow: 0 0 12px var(--success); opacity: 0.8; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 @keyframes typing-dot {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-5px); opacity: 1; }
 }
 
-.animate-fade-up {
-  animation: fadeUp 0.3s ease both;
+@keyframes pop-in {
+  0% { transform: scale(0.7); opacity: 0; }
+  80% { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
 }
 
-/* Editor (TipTap) */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── Glass card ── */
+.glass-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px);
+  border-radius: var(--radius-lg);
+}
+
+/* ── Sidebar nav item hover glow ── */
+.sidebar-item-active {
+  background: linear-gradient(90deg, var(--accent-soft) 0%, transparent 100%);
+  border-left: 2px solid var(--accent);
+  color: var(--accent) !important;
+}
+
+/* ── Message hover ── */
+.message-row:hover {
+  background: rgba(255,255,255,0.02);
+  border-radius: 8px;
+}
+
+/* ── Input focus glow ── */
+.input-glow:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ── Skeleton loading ── */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-overlay) 0%, var(--bg-hover) 50%, var(--bg-overlay) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* ── ProseMirror editor styles ── */
 .ProseMirror {
   outline: none;
-  min-height: 60vh;
+  min-height: 200px;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 15px;
@@ -144,19 +173,21 @@ body {
 
 .ProseMirror h1 {
   font-family: var(--font-display);
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: 2.2rem;
+  font-weight: 800;
   color: var(--text-primary);
-  margin: 1.5rem 0 0.75rem;
-  line-height: 1.2;
+  margin: 2rem 0 0.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
 .ProseMirror h2 {
   font-family: var(--font-display);
-  font-size: 1.4rem;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 700;
   color: var(--text-primary);
-  margin: 1.25rem 0 0.5rem;
+  margin: 1.5rem 0 0.5rem;
+  letter-spacing: -0.02em;
 }
 
 .ProseMirror h3 {
@@ -166,38 +197,34 @@ body {
   margin: 1rem 0 0.4rem;
 }
 
-.ProseMirror ul,
-.ProseMirror ol {
-  padding-left: 1.5rem;
-  margin: 0.5rem 0;
-}
-
-.ProseMirror li {
-  margin: 0.25rem 0;
-}
+.ProseMirror ul, .ProseMirror ol { padding-left: 1.6rem; margin: 0.6rem 0; }
+.ProseMirror li { margin: 0.3rem 0; color: var(--text-secondary); }
 
 .ProseMirror blockquote {
   border-left: 3px solid var(--accent);
-  padding-left: 1rem;
+  padding: 0.5rem 0 0.5rem 1.25rem;
   color: var(--text-secondary);
   font-style: italic;
   margin: 1rem 0;
+  background: var(--accent-soft);
+  border-radius: 0 8px 8px 0;
 }
 
 .ProseMirror code {
   background: var(--bg-overlay);
-  color: #22c986;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.875em;
-  font-family: "Fira Code", monospace;
+  color: var(--accent-2);
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
 }
 
 .ProseMirror pre {
   background: var(--bg-overlay);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 1rem;
+  padding: 1.2rem;
   margin: 1rem 0;
   overflow-x: auto;
 }
@@ -205,21 +232,15 @@ body {
 .ProseMirror pre code {
   background: transparent;
   padding: 0;
-}
-
-.ProseMirror hr {
   border: none;
-  border-top: 1px solid var(--border);
-  margin: 1.5rem 0;
+  color: var(--accent-2);
 }
 
-.ProseMirror a {
-  color: var(--accent);
-  text-decoration: underline;
-  text-decoration-color: var(--accent-soft);
-}
+.ProseMirror hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 
-/* Typing dots */
+.ProseMirror a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-soft); }
+
+/* Typing indicator dots */
 .typing-dot {
   display: inline-block;
   width: 4px;
@@ -228,9 +249,5 @@ body {
   background: var(--text-muted);
   animation: typing-dot 1.2s infinite;
 }
-.typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }

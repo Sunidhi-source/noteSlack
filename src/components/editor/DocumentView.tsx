@@ -420,31 +420,47 @@ export function DocumentView({ workspaceId, docId }: Props) {
           borderBottom: "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
-          gap: 6,
+          gap: 10,
           padding: "0 20px",
-          background: "var(--bg-surface)",
+          background: "rgba(9,9,14,0.8)",
+          backdropFilter: "blur(16px)",
         }}
       >
         <button
           type="button"
           onClick={handleBack}
-          aria-label="Back to documents"
-          title="Back to documents"
+          aria-label="Back to workspace"
+          title="Back to workspace"
           style={{
-            width: 32,
-            height: 32,
+            width: 30, height: 30,
             border: "1px solid var(--border)",
-            background: "transparent",
-            color: "var(--text-secondary)",
-            borderRadius: 6,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            background: "rgba(255,255,255,0.04)",
+            color: "var(--text-muted)",
+            borderRadius: 8,
+            display: "flex", alignItems: "center", justifyContent: "center",
             cursor: "pointer",
+            transition: "all 0.15s",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--accent-soft)";
+            e.currentTarget.style.color = "var(--accent)";
+            e.currentTarget.style.borderColor = "rgba(108,99,255,0.3)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+            e.currentTarget.style.color = "var(--text-muted)";
+            e.currentTarget.style.borderColor = "var(--border)";
           }}
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft size={14} />
         </button>
+
+        <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
+
+        <div style={{ width: 28, height: 28, borderRadius: 7, background: "var(--accent-2-soft)", border: "1px solid rgba(34,201,134,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <FileText size={14} style={{ color: "var(--accent-2)" }} />
+        </div>
 
         <div
           style={{
@@ -452,9 +468,11 @@ export function DocumentView({ workspaceId, docId }: Props) {
             alignItems: "center",
             gap: 5,
             fontWeight: 600,
+            color: "var(--text-primary)",
+            fontFamily: "var(--font-display)",
+            fontSize: 15,
           }}
         >
-          <FileText size={14} />
           Document
         </div>
 
@@ -475,14 +493,16 @@ export function DocumentView({ workspaceId, docId }: Props) {
               alignItems: "center",
               gap: 6,
               border: "1px solid var(--border)",
-              background: saving ? "var(--bg-hover)" : "var(--accent)",
+              background: saving ? "var(--bg-hover)" : "linear-gradient(135deg, var(--accent), #7c3aed)",
               color: saving ? "var(--text-muted)" : "#fff",
-              borderRadius: 6,
-              padding: "6px 12px",
+              borderRadius: 9,
+              padding: "7px 16px",
               fontSize: 12,
               fontWeight: 700,
               cursor: saving ? "not-allowed" : "pointer",
-              fontFamily: "inherit",
+              fontFamily: "var(--font-display)",
+              boxShadow: saving ? "none" : "0 2px 12px var(--accent-glow)",
+              transition: "all 0.15s",
             }}
           >
             {saving ? (

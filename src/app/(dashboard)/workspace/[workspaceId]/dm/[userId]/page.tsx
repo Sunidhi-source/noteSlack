@@ -5,7 +5,8 @@ import { useUser } from "@clerk/nextjs";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useDmMessages } from "@/hooks/useDmMessages";
-import { Send } from "lucide-react";
+import { Send, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import {
   getInitials,
   generateUserColor,
@@ -74,64 +75,67 @@ export default function DmPage({ params }: Props) {
       <div
         style={{
           height: "var(--header-h)",
-          padding: "0 20px",
+          padding: "0 16px",
           display: "flex",
           alignItems: "center",
-          gap: 12,
+          gap: 10,
           borderBottom: "1px solid var(--border)",
-          background: "var(--bg-surface)",
+          background: "rgba(9,9,14,0.8)",
+          backdropFilter: "blur(16px)",
           flexShrink: 0,
         }}
       >
+        {/* Back button */}
+        <Link
+          href={`/workspace/${workspaceId}`}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 30, height: 30, borderRadius: 8,
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid var(--border)",
+            color: "var(--text-muted)",
+            textDecoration: "none",
+            transition: "all 0.15s",
+            flexShrink: 0,
+          }}
+          title="Back to workspace"
+        >
+          <ArrowLeft size={14} />
+        </Link>
+
+        <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
+
         <div
           style={{
-            width: 32,
-            height: 32,
+            width: 34, height: 34,
             borderRadius: "50%",
             background: otherColor,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            fontSize: 12,
-            fontWeight: 700,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontSize: 12, fontWeight: 700,
             flexShrink: 0,
             position: "relative",
+            boxShadow: `0 2px 10px ${otherColor}50`,
           }}
         >
           {getInitials(otherName)}
-          {/* ✅ Real presence dot */}
           <span
             style={{
-              position: "absolute",
-              bottom: -1,
-              right: -1,
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
+              position: "absolute", bottom: -1, right: -1,
+              width: 10, height: 10, borderRadius: "50%",
               background: isOnline ? "var(--success)" : "var(--text-muted)",
-              border: "2px solid var(--bg-surface)",
+              border: "2px solid var(--bg-base)",
+              boxShadow: isOnline ? "0 0 6px var(--success)" : "none",
             }}
           />
         </div>
         <div>
-          <p
-            style={{
-              fontWeight: 600,
-              fontSize: 15,
-              color: "var(--text-primary)",
-              lineHeight: 1.2,
-            }}
-          >
+          <p style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--text-primary)", lineHeight: 1.2 }}>
             {otherName}
           </p>
-          <p
-            style={{
-              fontSize: 11,
-              color: isOnline ? "var(--success)" : "var(--text-muted)",
-            }}
-          >
-            {isOnline ? "● Online" : "○ Offline"}
+          <p style={{ fontSize: 11, color: isOnline ? "var(--success)" : "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+            {isOnline ? (
+              <><span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)", display: "inline-block", boxShadow: "0 0 6px var(--success)" }} /> Active now</>
+            ) : "Offline"}
           </p>
         </div>
       </div>
@@ -292,20 +296,24 @@ export default function DmPage({ params }: Props) {
       {/* Input */}
       <div
         style={{
-          padding: "12px 20px",
+          padding: "10px 16px 14px",
           borderTop: "1px solid var(--border)",
           flexShrink: 0,
+          background: "rgba(9,9,14,0.6)",
+          backdropFilter: "blur(12px)",
         }}
       >
         <div
+          className="input-glow"
           style={{
             display: "flex",
             alignItems: "flex-end",
             gap: 8,
-            background: "var(--bg-surface)",
+            background: "var(--bg-overlay)",
             border: "1px solid var(--border)",
-            borderRadius: "var(--radius-md)",
-            padding: "8px 10px",
+            borderRadius: 14,
+            padding: "8px 12px",
+            transition: "all 0.2s",
           }}
         >
           <textarea
@@ -328,6 +336,7 @@ export default function DmPage({ params }: Props) {
               fontFamily: "inherit",
               maxHeight: 120,
               lineHeight: 1.5,
+              padding: "2px 0",
             }}
             placeholder={`Message ${otherName}`}
             rows={1}
@@ -336,20 +345,24 @@ export default function DmPage({ params }: Props) {
             onClick={handleSend}
             disabled={!input.trim()}
             style={{
-              padding: "6px 10px",
-              background: input.trim() ? "var(--accent)" : "var(--bg-hover)",
+              padding: "7px 12px",
+              background: input.trim() ? "linear-gradient(135deg, var(--accent), #7c3aed)" : "var(--bg-hover)",
               border: "none",
-              borderRadius: 8,
+              borderRadius: 10,
               cursor: input.trim() ? "pointer" : "not-allowed",
               color: input.trim() ? "#fff" : "var(--text-muted)",
-              display: "flex",
-              alignItems: "center",
-              transition: "background 0.15s",
+              display: "flex", alignItems: "center",
+              transition: "all 0.15s",
+              flexShrink: 0,
+              boxShadow: input.trim() ? "0 2px 12px var(--accent-glow)" : "none",
             }}
           >
             <Send size={15} />
           </button>
         </div>
+        <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 5, paddingLeft: 2 }}>
+          <kbd style={{ background: "var(--bg-overlay)", padding: "1px 4px", borderRadius: 3, border: "1px solid var(--border)", fontSize: 10 }}>Enter</kbd> to send
+        </p>
       </div>
     </div>
   );
