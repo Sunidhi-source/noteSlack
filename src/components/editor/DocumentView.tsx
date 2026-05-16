@@ -1,23 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Editor, JSONContent } from "@tiptap/core";
+import { EditorContent, useEditor } from "@tiptap/react";
 import { useRouter } from "next/navigation";
-
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import Collaboration from "@tiptap/extension-collaboration";
-
-import * as Y from "yjs";
-import SupabaseProvider from "y-supabase";
-
-import { useUser, useAuth } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-
 import {
   ArrowLeft,
-  FileText,
   CheckCircle2,
+  FileText,
   RotateCw,
   Save,
 } from "lucide-react";
@@ -25,7 +19,6 @@ import {
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspaceStore } from "@/store/workspace";
-
 import { Document } from "@/types";
 
 interface Props {
@@ -33,34 +26,71 @@ interface Props {
   docId: string;
 }
 
-function CollaborativeEditor({ ydoc }: { ydoc: Y.Doc }) {
+const EMPTY_DOCUMENT: JSONContent = {
+  type: "doc",
+  content: [{ type: "paragraph" }],
+};
+
+function isTiptapDocument(content: unknown): content is JSONContent {
+  return (
+    typeof content === "object" &&
+    content !== null &&
+    !Array.isArray(content) &&
+    "type" in content &&
+    (content as { type?: unknown }).type === "doc"
+  );
+}
+
+function DocumentEditor({
+  initialContent,
+  remoteContent,
+  onChange,
+  onEditorReady,
+}: {
+  initialContent: JSONContent;
+  remoteContent: { content: JSONContent; version: number } | null;
+  onChange: (content: JSONContent, options?: { broadcast?: boolean }) => void;
+  onEditorReady: (editor: Editor | null) => void;
+}) {
   const editor = useEditor(
     {
       immediatelyRender: false,
-
+      content: initialContent,
       extensions: [
-        StarterKit.configure({
-          undoRedo: false,
-        }),
-
+        StarterKit,
         Placeholder.configure({
           placeholder: "Start writing something great...",
         }),
-
-        Collaboration.configure({
-          document: ydoc,
-        }),
       ],
-
       editorProps: {
         attributes: {
           class:
             "prose prose-sm sm:prose lg:prose-lg max-w-none focus:outline-none",
         },
       },
+      onUpdate: ({ editor }) => {
+        onChange(editor.getJSON());
+      },
     },
-    [ydoc],
+    [],
   );
+
+  useEffect(() => {
+    onEditorReady(editor);
+
+    return () => {
+      onEditorReady(null);
+    };
+  }, [editor, onEditorReady]);
+
+  useEffect(() => {
+    if (!editor || !remoteContent) return;
+
+    editor.commands.setContent(remoteContent.content, {
+      emitUpdate: false,
+    });
+    onChange(remoteContent.content, { broadcast: false });
+  }, [editor, onChange, remoteContent]);
 
   return <EditorContent editor={editor} />;
 }
@@ -69,79 +99,99 @@ export function DocumentView({ workspaceId, docId }: Props) {
   useWorkspace(workspaceId);
 
   const router = useRouter();
-
   const supabase = useSupabaseClient();
-
   const { user } = useUser();
-  const { getToken } = useAuth();
+  const { updateDocument } = useWorkspaceStore();
 
-  const { documents, updateDocument } = useWorkspaceStore();
-
-  const doc = documents.find((d) => d.id === docId);
-
-  const [title, setTitle] = useState(doc?.title ?? "");
-
+  const [title, setTitle] = useState("");
   const [hasUnsavedTitle, setHasUnsavedTitle] = useState(false);
-
-  const [collabReady, setCollabReady] = useState(false);
-
+  const [contentReady, setContentReady] = useState(false);
+  const [editorContent, setEditorContent] =
+    useState<JSONContent>(EMPTY_DOCUMENT);
+  const [remoteContent, setRemoteContent] = useState<{
+    content: JSONContent;
+    version: number;
+  } | null>(null);
   const [collab, setCollab] = useState(false);
-
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
-  const ydocRef = useRef<Y.Doc | null>(null);
-
-  const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
-
-  const providerRef = useRef<SupabaseProvider | null>(null);
   const titleChannelRef = useRef<RealtimeChannel | null>(null);
-
+  const contentChannelRef = useRef<RealtimeChannel | null>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const titleRef = useRef("");
+  const hasUnsavedTitleRef = useRef(false);
+  const contentRef = useRef<JSONContent>(EMPTY_DOCUMENT);
+  const remoteVersionRef = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ─────────────────────────────────────────────
-  // Load document
-  // ─────────────────────────────────────────────
+  const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    queueMicrotask(() => setHasUnsavedTitle(false));
-  }, [docId]);
+    hasUnsavedTitleRef.current = hasUnsavedTitle;
+  }, [hasUnsavedTitle]);
 
   useEffect(() => {
-    if (doc) {
-      if (!hasUnsavedTitle) {
-        queueMicrotask(() => {
-          setTitle(doc.title ?? "");
-        });
-      }
+    let mounted = true;
 
-      return;
-    }
+    contentRef.current = EMPTY_DOCUMENT;
 
-    supabase
-      .from("documents")
-      .select("*")
-      .eq("id", docId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error(error);
-          return;
+    queueMicrotask(() => {
+      if (!mounted) return;
+
+      setContentReady(false);
+      setEditorContent(EMPTY_DOCUMENT);
+      setRemoteContent(null);
+    });
+
+    fetch(`/api/documents?id=${encodeURIComponent(docId)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            (await res.text()) || "Failed to load document",
+          );
         }
 
-        if (data) {
-          updateDocument(docId, data as Document);
+        return (await res.json()) as Document;
+      })
+      .then((document) => {
+        if (!mounted) return;
 
-          setTitle(data.title ?? "");
+        const nextContent = isTiptapDocument(document.content)
+          ? document.content
+          : EMPTY_DOCUMENT;
+
+        updateDocument(docId, document);
+
+        if (!hasUnsavedTitleRef.current) {
+          const nextTitle = document.title ?? "";
+          titleRef.current = nextTitle;
+          setTitle(nextTitle);
         }
+
+        setEditorContent(nextContent);
+        contentRef.current = nextContent;
+        setContentReady(true);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+
+        console.error("Document load failed:", error);
+        setSaveError(
+          error instanceof Error ? error.message : "Failed to load document",
+        );
+        setContentReady(true);
       });
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docId, doc?.id]);
+    return () => {
+      mounted = false;
+    };
+  }, [docId, updateDocument]);
 
   useEffect(() => {
-    if (!user?.id || !supabase) return;
+    if (!user?.id) return;
 
-    const channel = supabase
+    const titleChannel = supabase
       .channel(`doc-title-${docId}`)
       .on("broadcast", { event: "title" }, ({ payload }) => {
         const nextTitle = payload?.title;
@@ -150,177 +200,108 @@ export function DocumentView({ workspaceId, docId }: Props) {
           return;
         }
 
+        titleRef.current = nextTitle;
         setTitle(nextTitle);
         setHasUnsavedTitle(false);
         updateDocument(docId, { title: nextTitle });
       })
       .subscribe();
 
-    titleChannelRef.current = channel;
+    const contentChannel = supabase
+      .channel(`doc-content-${docId}`)
+      .on("broadcast", { event: "content" }, ({ payload }) => {
+        const nextContent = payload?.content;
+
+        if (payload?.userId === user.id || !isTiptapDocument(nextContent)) {
+          return;
+        }
+
+        remoteVersionRef.current += 1;
+        setRemoteContent({
+          content: nextContent,
+          version: remoteVersionRef.current,
+        });
+      })
+      .subscribe((status) => {
+        setCollab(status === "SUBSCRIBED");
+      });
+
+    titleChannelRef.current = titleChannel;
+    contentChannelRef.current = contentChannel;
 
     return () => {
       titleChannelRef.current = null;
-      supabase.removeChannel(channel);
+      contentChannelRef.current = null;
+      supabase.removeChannel(titleChannel);
+      supabase.removeChannel(contentChannel);
+      setCollab(false);
     };
   }, [docId, supabase, updateDocument, user?.id]);
 
-  // ─────────────────────────────────────────────
-  // Setup Collaboration
-  // ─────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!user || !supabase) return;
-
-    providerRef.current?.destroy();
-    ydocRef.current?.destroy();
-
-    providerRef.current = null;
-    ydocRef.current = null;
-
-    queueMicrotask(() => {
-      setYdoc(null);
-      setCollabReady(false);
-      setCollab(false);
-    });
-
-    const ydoc = new Y.Doc();
-
-    ydocRef.current = ydoc;
-
-    let mounted = true;
-
-    (async () => {
-      try {
-        // ✅ FIX: Always fetch and apply the token before creating
-        // SupabaseProvider. This ensures Realtime auth is set correctly
-        // before any channel subscription is made, preventing 422 errors.
-        const token = await getToken({
-          template: "supabase",
-        }).catch(() => null);
-
-        if (!mounted) return;
-
-        if (token) {
-          supabase.realtime.setAuth(token);
-        }
-
-        const provider = new SupabaseProvider(ydoc, supabase, {
-          channel: `doc-${docId}`,
-          id: docId,
-          tableName: "documents",
-          columnName: "content",
-          resyncInterval: false,
-        });
-
-        if (!mounted) return;
-
-        providerRef.current = provider;
-        setYdoc(ydoc);
-
-        provider?.on?.("connect", () => {
-          setCollab(true);
-        });
-
-        provider?.on?.("status", (status: Array<{ status?: string }>) => {
-          setCollab(status.some((item) => item.status === "connected"));
-        });
-
-        provider?.on?.("disconnect", () => {
-          setCollab(false);
-        });
-
-        provider?.on?.("error", (error: unknown) => {
-          console.error("Collaboration provider error:", error);
-          setCollab(false);
-        });
-
-        provider?.on?.("synced", () => {
-          setCollab(true);
-        });
-
-        setCollabReady(true);
-      } catch (err) {
-        console.error("Collaboration setup failed:", err);
-      }
-    })();
-
-    return () => {
-      mounted = false;
-
-      providerRef.current?.destroy();
-      ydocRef.current?.destroy();
-
-      providerRef.current = null;
-      ydocRef.current = null;
-      setYdoc(null);
-
-      setCollabReady(false);
-      setCollab(false);
-    };
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docId, user?.id]);
-
-  // ─────────────────────────────────────────────
-  // Save Title
-  // ─────────────────────────────────────────────
-
-  const saveTitle = useCallback(
+  const saveDocumentSnapshot = useCallback(
     async (newTitle: string) => {
+      const currentContent = editorRef.current?.getJSON() ?? contentRef.current;
+
+      contentRef.current = currentContent;
+      setEditorContent(currentContent);
+      setSaveError(null);
+
       const res = await fetch("/api/documents", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: docId,
           title: newTitle,
+          content: currentContent,
         }),
       });
 
       if (!res.ok) {
-        throw new Error((await res.text()) || "Failed to save title");
+        throw new Error((await res.text()) || "Failed to save document");
       }
 
       const savedDoc = (await res.json()) as Document;
 
-      if (savedDoc) {
-        updateDocument(docId, {
-          title: savedDoc.title,
-          updated_at: savedDoc.updated_at,
-          last_edited_by: savedDoc.last_edited_by,
-        });
-      }
+      updateDocument(docId, {
+        title: savedDoc.title,
+        content: savedDoc.content,
+        updated_at: savedDoc.updated_at,
+        last_edited_by: savedDoc.last_edited_by,
+      });
+      setLastSavedAt(Date.now());
     },
     [docId, updateDocument],
   );
 
   const handleSaveDocument = useCallback(async () => {
-    // Clear any pending auto-save timer since we're saving now
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
+    }
+    if (contentSaveTimer.current) {
+      clearTimeout(contentSaveTimer.current);
+      contentSaveTimer.current = null;
     }
 
     setSaving(true);
 
     try {
-      await Promise.all([saveTitle(title), providerRef.current?.save()]);
+      await saveDocumentSnapshot(titleRef.current);
       setHasUnsavedTitle(false);
     } catch (error) {
       console.error("Document save failed:", error);
+      setSaveError(
+        error instanceof Error ? error.message : "Document save failed",
+      );
     } finally {
       setSaving(false);
     }
-  }, [saveTitle, title]);
-
-  const handleBack = useCallback(() => {
-    router.push(`/workspace/${workspaceId}`);
-  }, [router, workspaceId]);
+  }, [saveDocumentSnapshot]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-
         handleSaveDocument();
       }
     };
@@ -332,7 +313,12 @@ export function DocumentView({ workspaceId, docId }: Props) {
     };
   }, [handleSaveDocument]);
 
+  const handleBack = useCallback(() => {
+    router.push(`/workspace/${workspaceId}`);
+  }, [router, workspaceId]);
+
   const handleTitleChange = (newTitle: string) => {
+    titleRef.current = newTitle;
     setTitle(newTitle);
     setHasUnsavedTitle(true);
 
@@ -345,21 +331,20 @@ export function DocumentView({ workspaceId, docId }: Props) {
       },
     });
 
-    // ✅ FIX: Restart the debounce timer on every keystroke so the title
-    // is auto-saved 1.5s after the user stops typing. Previously the timer
-    // was cleared but never restarted, so unsaved title changes were lost
-    // unless the user clicked Save manually.
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
     }
 
     saveTimer.current = setTimeout(() => {
-      saveTitle(newTitle)
+      saveDocumentSnapshot(newTitle)
         .then(() => {
           setHasUnsavedTitle(false);
         })
         .catch((error) => {
           console.error("Title auto-save failed:", error);
+          setSaveError(
+            error instanceof Error ? error.message : "Title auto-save failed",
+          );
         })
         .finally(() => {
           saveTimer.current = null;
@@ -367,11 +352,63 @@ export function DocumentView({ workspaceId, docId }: Props) {
     }, 1500);
   };
 
-  // ─────────────────────────────────────────────
-  // Loading
-  // ─────────────────────────────────────────────
+  const handleContentChange = useCallback(
+    (
+      nextContent: JSONContent,
+      options: { broadcast?: boolean } = { broadcast: true },
+    ) => {
+      contentRef.current = nextContent;
+      setEditorContent(nextContent);
 
-  if (!collabReady || !ydoc) {
+      if (options.broadcast !== false) {
+        if (contentSaveTimer.current) {
+          clearTimeout(contentSaveTimer.current);
+        }
+
+        contentSaveTimer.current = setTimeout(() => {
+          saveDocumentSnapshot(titleRef.current)
+            .catch((error) => {
+              console.error("Content auto-save failed:", error);
+              setSaveError(
+                error instanceof Error
+                  ? error.message
+                  : "Content auto-save failed",
+              );
+            })
+            .finally(() => {
+              contentSaveTimer.current = null;
+            });
+        }, 1200);
+
+        contentChannelRef.current?.send({
+          type: "broadcast",
+          event: "content",
+          payload: {
+            content: nextContent,
+            userId: user?.id,
+          },
+        });
+      }
+    },
+    [saveDocumentSnapshot, user?.id],
+  );
+
+  const handleEditorReady = useCallback((editor: Editor | null) => {
+    editorRef.current = editor;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+      }
+      if (contentSaveTimer.current) {
+        clearTimeout(contentSaveTimer.current);
+      }
+    };
+  }, []);
+
+  if (!contentReady) {
     return (
       <div
         style={{
@@ -412,8 +449,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
         background: "var(--bg-base)",
       }}
     >
-      {/* Toolbar */}
-
       <div
         style={{
           height: "var(--header-h)",
@@ -518,6 +553,26 @@ export function DocumentView({ workspaceId, docId }: Props) {
             {saving ? "Saving" : "Save"}
           </button>
 
+          {saveError ? (
+            <span
+              style={{
+                fontSize: 12,
+                color: "#dc2626",
+              }}
+            >
+              Save failed
+            </span>
+          ) : lastSavedAt ? (
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              Saved
+            </span>
+          ) : null}
+
           {!collab ? (
             <span
               style={{
@@ -552,8 +607,6 @@ export function DocumentView({ workspaceId, docId }: Props) {
         </div>
       </div>
 
-      {/* Editor */}
-
       <div
         style={{
           flex: 1,
@@ -583,7 +636,12 @@ export function DocumentView({ workspaceId, docId }: Props) {
             }}
           />
 
-          <CollaborativeEditor ydoc={ydoc} />
+          <DocumentEditor
+            initialContent={editorContent}
+            remoteContent={remoteContent}
+            onChange={handleContentChange}
+            onEditorReady={handleEditorReady}
+          />
         </div>
       </div>
     </div>

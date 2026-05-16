@@ -2,6 +2,41 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export async function GET(req: Request) {
+  const { userId } = await auth();
+  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return new NextResponse("Document id required", { status: 400 });
+  }
+
+  const supabase = createServerSupabaseClient();
+
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (documentError || !document) {
+    return new NextResponse("Document not found", { status: 404 });
+  }
+
+  const { data: member } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", document.workspace_id)
+    .eq("user_id", userId)
+    .single();
+
+  if (!member) return new NextResponse("Forbidden", { status: 403 });
+
+  return NextResponse.json(document);
+}
+
 export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return new NextResponse("Unauthorized", { status: 401 });
