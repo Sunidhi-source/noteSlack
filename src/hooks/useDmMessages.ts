@@ -39,16 +39,18 @@ export function useDmMessages(conversationId: string | null) {
         setLoading(false);
       });
 
+    // ✅ FIX: hoist channel ref and use unique key so cleanup always
+    //    has the reference regardless of when authReady resolves.
     let cancelled = false;
     let channel: ReturnType<typeof realtimeClient.channel> | null = null;
+    const channelKey = `dm:${conversationId}:${Date.now()}`;
 
-    // ✅ Wait for auth token before subscribing — avoids the race condition
-    //    where the WS connects as anon and RLS blocks postgres_changes events
-    authReady.then(() => {
+    const setup = async () => {
+      await authReady;
       if (cancelled) return;
 
       channel = realtimeClient
-        .channel(`dm:${conversationId}`)
+        .channel(channelKey)
         .on(
           "postgres_changes",
           {
@@ -61,7 +63,7 @@ export function useDmMessages(conversationId: string | null) {
             if (cancelled || !payload.new) return;
             const newId = (payload.new as DmMessage).id;
 
-            // ✅ Skip our own messages — already added optimistically in sendMessage
+            // ✅ Skip our own messages — already added optimistically
             if (confirmedIds.current.has(newId)) return;
 
             const { data: fullMsg } = await supabase
@@ -80,14 +82,54 @@ export function useDmMessages(conversationId: string | null) {
           },
         )
         .subscribe((status) => {
-          console.log(`[realtime] dm:${conversationId} →`, status);
+          console.log(`[realtime] ${channelKey} →`, status);
         });
-    });
+    };
+
+    setup();
 
     return () => {
       cancelled = true;
-      if (channel) realtimeClient.removeChannel(channel);
+      if (channel) {
+        realtimeClient.removeChannel(channel);
+        channel = null;
+      } else {
+        authReady.then(() => {
+          if (channel) {
+            realtimeClient.removeChannel(channel);
+            channel = null;
+          }
+        });
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
+  // ✅ NEW: Polling fallback every 15s as safety net for missed realtime events
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const poll = () => {
+      supabase
+        .from("dm_messages")
+        .select("*, users(full_name, avatar_url)")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true })
+        .then(({ data }) => {
+          if (!data) return;
+          const incoming = data as DmMessage[];
+          setMessagesRef.current((prev) => {
+            const prevIds = new Set(prev.map((m) => m.id));
+            const hasNew = incoming.some((m) => !prevIds.has(m.id));
+            if (!hasNew) return prev;
+            incoming.forEach((m) => confirmedIds.current.add(m.id));
+            return incoming;
+          });
+        });
+    };
+
+    const timer = setInterval(poll, 15_000);
+    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 

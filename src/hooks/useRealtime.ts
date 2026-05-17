@@ -20,13 +20,13 @@ export const realtimeClient = createClient(
   }
 );
 
-// ✅ Register token setter so client.ts can push tokens here
-//    After setting auth, disconnect + reconnect so the WS handshake uses the new JWT
+// ✅ Register token setter so client.ts can push tokens here.
+//    CRITICAL FIX: only call setAuth — never disconnect/reconnect.
+//    Calling disconnect() destroys all active channel subscriptions,
+//    which was the root cause of messages not appearing in real time
+//    (every 50s token refresh was wiping all subscriptions).
 registerRealtimeAuthSetter((token: string) => {
   realtimeClient.realtime.setAuth(token);
-  // Force the WebSocket to reconnect with the new token
-  realtimeClient.realtime.disconnect();
-  realtimeClient.realtime.connect();
 });
 
 export function useMessages(channelId: string) {
@@ -37,7 +37,7 @@ export function useMessages(channelId: string) {
   const setMessagesRef = useRef(setMessages);
   setMessagesRef.current = setMessages;
 
-  // ✅ Track confirmed real IDs — prevents double-add from realtime
+  // ✅ Track confirmed real IDs — prevents double-add from realtime echo
   const confirmedIds = useRef<Set<string>>(new Set());
 
   const addMessage = useCallback((msg: Message) => {
@@ -89,17 +89,22 @@ export function useMessages(channelId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
-  // ✅ Realtime subscription — wait for auth token before subscribing
+  // ✅ Realtime subscription — wait for auth token before subscribing.
+  //    FIX: Unique channel key per mount prevents ghost subscriptions
+  //    when switching between channels rapidly.
   useEffect(() => {
     if (!channelId) return;
+
+    const channelKey = `messages:${channelId}:${Date.now()}`;
     let cancelled = false;
     let sub: ReturnType<typeof realtimeClient.channel> | null = null;
 
-    authReady.then(() => {
+    const setup = async () => {
+      await authReady;
       if (cancelled) return;
 
       sub = realtimeClient
-        .channel(`messages:${channelId}`)
+        .channel(channelKey)
         .on(
           "postgres_changes",
           {
@@ -178,18 +183,26 @@ export function useMessages(channelId: string) {
           },
         )
         .subscribe((status) => {
-          console.log(`[realtime] messages:${channelId} →`, status);
+          console.log(`[realtime] ${channelKey} →`, status);
         });
-    });
+    };
+
+    setup();
 
     return () => {
       cancelled = true;
-      if (sub) realtimeClient.removeChannel(sub);
+      // ✅ FIX: clean up after authReady so `sub` is always populated
+      authReady.then(() => {
+        if (sub) {
+          realtimeClient.removeChannel(sub);
+          sub = null;
+        }
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
-  // ✅ Re-sync when tab becomes visible
+  // ✅ Re-sync when tab becomes visible (catches missed events while hidden)
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible" || !channelId) return;
@@ -209,6 +222,37 @@ export function useMessages(channelId: string) {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
+
+  // ✅ NEW: Polling fallback every 15s as a safety net for any missed
+  //    realtime events. Guarantees eventual consistency even if the WS
+  //    subscription silently drops an event (e.g. network hiccup).
+  useEffect(() => {
+    if (!channelId) return;
+
+    const poll = () => {
+      supabase
+        .from("messages")
+        .select("*, users(full_name, avatar_url)")
+        .eq("channel_id", channelId)
+        .is("parent_message_id", null)
+        .order("created_at", { ascending: true })
+        .then(({ data }) => {
+          if (!data) return;
+          const incoming = data as Message[];
+          setMessagesRef.current((prev) => {
+            const prevIds = new Set(prev.map((m) => m.id));
+            const hasNew = incoming.some((m) => !prevIds.has(m.id));
+            if (!hasNew) return prev; // no change — avoid re-render
+            incoming.forEach((m) => confirmedIds.current.add(m.id));
+            return incoming;
+          });
+        });
+    };
+
+    const timer = setInterval(poll, 15_000);
+    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
@@ -289,11 +333,19 @@ export function useThreadMessages(parentMessageId: string | null) {
         setLoading(false);
       });
 
+    // ✅ FIX: hoist channel ref outside the async gap so cleanup always
+    //    has the reference. Previously `channel` was `null` when cleanup
+    //    ran before authReady resolved, causing a subscription leak.
+    let cancelled = false;
     let channel: ReturnType<typeof realtimeClient.channel> | null = null;
+    const channelKey = `thread:${parentMessageId}:${Date.now()}`;
 
-    authReady.then(() => {
+    const setup = async () => {
+      await authReady;
+      if (cancelled) return;
+
       channel = realtimeClient
-        .channel(`thread:${parentMessageId}`)
+        .channel(channelKey)
         .on(
           "postgres_changes",
           {
@@ -303,18 +355,17 @@ export function useThreadMessages(parentMessageId: string | null) {
             filter: `parent_message_id=eq.${parentMessageId}`,
           },
           async (payload) => {
-            if (!payload.new) return;
+            if (cancelled || !payload.new) return;
             const { data: fullMsg } = await supabase
               .from("messages")
               .select("*, users(full_name, avatar_url)")
               .eq("id", (payload.new as Message).id)
               .single();
-            if (fullMsg) {
-              setReplies((prev) => {
-                if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
-                return [...prev, fullMsg as Message];
-              });
-            }
+            if (cancelled || !fullMsg) return;
+            setReplies((prev) => {
+              if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
+              return [...prev, fullMsg as Message];
+            });
           },
         )
         .on(
@@ -326,15 +377,33 @@ export function useThreadMessages(parentMessageId: string | null) {
             filter: `parent_message_id=eq.${parentMessageId}`,
           },
           (payload) => {
+            if (cancelled) return;
             const oldId = (payload.old as Partial<Message>)?.id;
             if (oldId) setReplies((prev) => prev.filter((m) => m.id !== oldId));
           },
         )
-        .subscribe();
-    });
+        .subscribe((status) => {
+          console.log(`[realtime] ${channelKey} →`, status);
+        });
+    };
+
+    setup();
 
     return () => {
-      if (channel) realtimeClient.removeChannel(channel);
+      cancelled = true;
+      // ✅ FIX: whether channel was created synchronously or via authReady,
+      //    this path always removes it correctly.
+      if (channel) {
+        realtimeClient.removeChannel(channel);
+        channel = null;
+      } else {
+        authReady.then(() => {
+          if (channel) {
+            realtimeClient.removeChannel(channel);
+            channel = null;
+          }
+        });
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parentMessageId]);
