@@ -7,6 +7,10 @@ import { realtimeClient } from "@/hooks/useRealtime";
 import { useWorkspaceStore } from "@/store/workspace";
 import { Channel, Document, Notification, User, Workspace } from "@/types";
 
+// ✅ Track which workspaceIds are already being fetched
+// so double-mounting (Sidebar + WorkspaceHome) doesn't cause duplicate subscriptions
+const activeWorkspaces = new Map<string, number>();
+
 export function useWorkspace(workspaceId: string) {
   const supabase = useSupabaseClient();
   const supabaseRef = useRef(supabase);
@@ -28,6 +32,11 @@ export function useWorkspace(workspaceId: string) {
 
   useEffect(() => {
     if (!workspaceId || !user?.id) return;
+
+    // ✅ If another instance is already handling this workspace, skip subscriptions
+    const count = (activeWorkspaces.get(workspaceId) ?? 0) + 1;
+    activeWorkspaces.set(workspaceId, count);
+    const isPrimary = count === 1; // only first caller sets up subscriptions
 
     const client = supabaseRef.current;
     client
@@ -118,68 +127,66 @@ export function useWorkspace(workspaceId: string) {
       )
       .subscribe();
 
-    // ✅ FIX: Use async/await pattern so the channel refs are always set
-    //    before cleanup can run. Previously authReady.then() assigned to
-    //    channelsSub/docsSub *after* cleanup ran if the component unmounted
-    //    quickly, leaking subscriptions and preventing new-channel/doc events
-    //    from showing in the sidebar without a page refresh.
+    // ✅ Only primary caller sets up realtime subscriptions
     let cancelledWs = false;
     let channelsSub: ReturnType<typeof realtimeClient.channel> | null = null;
     let docsSub: ReturnType<typeof realtimeClient.channel> | null = null;
 
-    const setupWs = async () => {
-      await authReady;
-      if (cancelledWs) return;
+    if (isPrimary) {
+      const setupWs = async () => {
+        await authReady;
+        if (cancelledWs) return;
 
-      channelsSub = realtimeClient
-        .channel(`workspace_channels:${workspaceId}:${Date.now()}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "channels",
-            filter: `workspace_id=eq.${workspaceId}`,
-          },
-          (payload) => {
-            if (payload.new) addChannel(payload.new as Channel);
-          },
-        )
-        .subscribe();
+        channelsSub = realtimeClient
+          .channel(`workspace_channels:${workspaceId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "channels",
+              filter: `workspace_id=eq.${workspaceId}`,
+            },
+            (payload) => {
+              if (payload.new) addChannel(payload.new as Channel);
+            },
+          )
+          .subscribe();
 
-      docsSub = realtimeClient
-        .channel(`workspace_docs:${workspaceId}:${Date.now()}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "documents",
-            filter: `workspace_id=eq.${workspaceId}`,
-          },
-          (payload) => {
-            if (payload.new) addDocument(payload.new as Document);
-          },
-        )
-        .subscribe();
-    };
+        docsSub = realtimeClient
+          .channel(`workspace_docs:${workspaceId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "documents",
+              filter: `workspace_id=eq.${workspaceId}`,
+            },
+            (payload) => {
+              if (payload.new) addDocument(payload.new as Document);
+            },
+          )
+          .subscribe();
+      };
 
-    setupWs();
+      setupWs();
+    }
 
     return () => {
+      // ✅ Decrement count and clean up subscriptions when last caller unmounts
+      const remaining = (activeWorkspaces.get(workspaceId) ?? 1) - 1;
+      if (remaining <= 0) {
+        activeWorkspaces.delete(workspaceId);
+      } else {
+        activeWorkspaces.set(workspaceId, remaining);
+      }
+
       cancelledWs = true;
       client.removeChannel(notifChannel);
       client.removeChannel(msgChannel);
-      // ✅ FIX: If refs already set, remove immediately; otherwise wait for
-      //    setupWs to finish so we never leave orphaned subscriptions.
-      if (channelsSub) { realtimeClient.removeChannel(channelsSub); channelsSub = null; }
-      if (docsSub) { realtimeClient.removeChannel(docsSub); docsSub = null; }
-      if (!channelsSub && !docsSub) {
-        authReady.then(() => {
-          if (channelsSub) { realtimeClient.removeChannel(channelsSub!); }
-          if (docsSub) { realtimeClient.removeChannel(docsSub!); }
-        });
-      }
+      if (channelsSub) { realtimeClient.removeChannel(channelsSub); }
+      if (docsSub) { realtimeClient.removeChannel(docsSub); }
     };
   }, [
     workspaceId,

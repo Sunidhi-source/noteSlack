@@ -17,6 +17,8 @@ import { useSupabaseClient, authReady } from "@/lib/supabase/client";
 import { realtimeClient } from "@/hooks/useRealtime";
 import { Message } from "@/types";
 
+import { useWorkspace } from "@/hooks/useWorkspace";
+
 interface Props { workspaceId: string; }
 
 interface ActivityItem {
@@ -48,6 +50,7 @@ function getGreetingEmoji() {
 }
 
 export function WorkspaceHome({ workspaceId }: Props) {
+  useWorkspace(workspaceId); // ✅ ensures store is populated even if Sidebar hasn't loaded yet
   const { currentWorkspace, channels, documents, members } = useWorkspaceStore();
   const { user } = useUser();
   const supabase = useSupabaseClient();
@@ -71,6 +74,14 @@ export function WorkspaceHome({ workspaceId }: Props) {
 
   // Stats tracking
   const [todayMsgCount, setTodayMsgCount] = useState(0);
+  // ✅ Track whether store data has arrived so stats don't flash 0
+  const [dataReady, setDataReady] = useState(false);
+
+  useEffect(() => {
+    if (channels.length > 0 || members.length > 0 || documents.length > 0) {
+      setDataReady(true);
+    }
+  }, [channels.length, members.length, documents.length]);
 
   const generalChannel = channels.find(
     (c) => c.name.toLowerCase() === "general" || c.name.toLowerCase() === "general-discussion"
@@ -288,12 +299,12 @@ export function WorkspaceHome({ workspaceId }: Props) {
                 {/* Meta pills */}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {[
-                    { icon: <Users size={10} />, label: `${members.length} members`, color: "#7c6dfa", bg: "rgba(124,109,250,0.12)", border: "rgba(124,109,250,0.2)" },
-                    { icon: <Hash size={10} />, label: `${channels.length} channels`, color: "#fa6d9a", bg: "rgba(250,109,154,0.1)", border: "rgba(250,109,154,0.2)" },
-                    { icon: <FileText size={10} />, label: `${documents.length} docs`, color: "#34d399", bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.18)" },
+                    { icon: <Users size={10} />, label: dataReady ? `${members.length} members` : "…", color: "#7c6dfa", bg: "rgba(124,109,250,0.12)", border: "rgba(124,109,250,0.2)" },
+                    { icon: <Hash size={10} />, label: dataReady ? `${channels.length} channels` : "…", color: "#fa6d9a", bg: "rgba(250,109,154,0.1)", border: "rgba(250,109,154,0.2)" },
+                    { icon: <FileText size={10} />, label: dataReady ? `${documents.length} docs` : "…", color: "#34d399", bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.18)" },
                     { icon: <MessageCircle size={10} />, label: `${todayMsgCount} msgs today`, color: "#fbbf24", bg: "rgba(251,191,36,0.08)", border: "rgba(251,191,36,0.18)" },
-                  ].map(({ icon, label, color, bg, border }) => (
-                    <span key={label} style={{
+                  ].map(({ icon, label, color, bg, border }, i) => (
+                    <span key={i} style={{
                       display: "flex", alignItems: "center", gap: 5,
                       fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 600,
                       background: bg, padding: "5px 12px",
@@ -318,9 +329,9 @@ export function WorkspaceHome({ workspaceId }: Props) {
               display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 0,
             }}>
               {[
-                { label: "Total Members", value: members.length, icon: <Users size={16} />, color: "#7c6dfa", bg: "rgba(124,109,250,0.12)", trend: "+2 this week" },
-                { label: "Channels", value: channels.length, icon: <Hash size={16} />, color: "#fa6d9a", bg: "rgba(250,109,154,0.1)", trend: "Active" },
-                { label: "Documents", value: documents.length, icon: <FileText size={16} />, color: "#34d399", bg: "rgba(52,211,153,0.08)", trend: `${recentDocs.length} recently edited` },
+                { label: "Total Members", value: dataReady ? members.length : "—", icon: <Users size={16} />, color: "#7c6dfa", bg: "rgba(124,109,250,0.12)", trend: "+2 this week" },
+                { label: "Channels", value: dataReady ? channels.length : "—", icon: <Hash size={16} />, color: "#fa6d9a", bg: "rgba(250,109,154,0.1)", trend: "Active" },
+                { label: "Documents", value: dataReady ? documents.length : "—", icon: <FileText size={16} />, color: "#34d399", bg: "rgba(52,211,153,0.08)", trend: `${recentDocs.length} recently edited` },
                 { label: "Messages Today", value: todayMsgCount, icon: <MessageCircle size={16} />, color: "#fbbf24", bg: "rgba(251,191,36,0.08)", trend: "Live count" },
               ].map(({ label, value, icon, color, bg, trend }) => (
                 <div key={label} style={{
