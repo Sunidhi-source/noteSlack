@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { createClient } from "@supabase/supabase-js";
-import { useSupabaseClient, registerRealtimeAuthSetter } from "@/lib/supabase/client";
+import { useSupabaseClient, registerRealtimeAuthSetter, authReady } from "@/lib/supabase/client";
 import { Message, TypingUser } from "@/types";
 
 // ✅ Stable module-level realtime client — never recreated — exported for use in other hooks
@@ -21,8 +21,12 @@ export const realtimeClient = createClient(
 );
 
 // ✅ Register token setter so client.ts can push tokens here
+//    After setting auth, disconnect + reconnect so the WS handshake uses the new JWT
 registerRealtimeAuthSetter((token: string) => {
   realtimeClient.realtime.setAuth(token);
+  // Force the WebSocket to reconnect with the new token
+  realtimeClient.realtime.disconnect();
+  realtimeClient.realtime.connect();
 });
 
 export function useMessages(channelId: string) {
@@ -85,97 +89,102 @@ export function useMessages(channelId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
-  // ✅ Realtime subscription on stable client
+  // ✅ Realtime subscription — wait for auth token before subscribing
   useEffect(() => {
     if (!channelId) return;
     let cancelled = false;
+    let sub: ReturnType<typeof realtimeClient.channel> | null = null;
 
-    const sub = realtimeClient
-      .channel(`messages:${channelId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `channel_id=eq.${channelId}`,
-        },
-        async (payload) => {
-          if (cancelled || !payload.new) return;
-          const newMsg = payload.new as Message;
+    authReady.then(() => {
+      if (cancelled) return;
 
-          // Skip thread replies
-          if (newMsg.parent_message_id) return;
+      sub = realtimeClient
+        .channel(`messages:${channelId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `channel_id=eq.${channelId}`,
+          },
+          async (payload) => {
+            if (cancelled || !payload.new) return;
+            const newMsg = payload.new as Message;
 
-          const newId = newMsg.id;
+            // Skip thread replies
+            if (newMsg.parent_message_id) return;
 
-          // ✅ Our own message already added via replaceMessage — skip
-          if (confirmedIds.current.has(newId)) return;
+            const newId = newMsg.id;
 
-          // ✅ Someone else's message — fetch with user join and append
-          const { data: fullMsg } = await supabase
-            .from("messages")
-            .select("*, users(full_name, avatar_url)")
-            .eq("id", newId)
-            .single();
+            // ✅ Our own message already added via replaceMessage — skip
+            if (confirmedIds.current.has(newId)) return;
 
-          if (cancelled || !fullMsg) return;
+            // ✅ Someone else's message — fetch with user join and append
+            const { data: fullMsg } = await supabase
+              .from("messages")
+              .select("*, users(full_name, avatar_url)")
+              .eq("id", newId)
+              .single();
 
-          setMessagesRef.current((prev) => {
-            if (prev.find((m) => m.id === newId)) return prev;
-            confirmedIds.current.add(newId);
-            return [...prev, fullMsg as Message];
-          });
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter: `channel_id=eq.${channelId}`,
-        },
-        async (payload) => {
-          if (cancelled || !payload.new) return;
-          const { data: fullMsg } = await supabase
-            .from("messages")
-            .select("*, users(full_name, avatar_url)")
-            .eq("id", (payload.new as Message).id)
-            .single();
-          if (!cancelled && fullMsg) {
-            setMessagesRef.current((prev) =>
-              prev.map((m) =>
-                m.id === (fullMsg as Message).id ? (fullMsg as Message) : m,
-              ),
-            );
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "messages",
-          filter: `channel_id=eq.${channelId}`,
-        },
-        (payload) => {
-          if (cancelled) return;
-          const oldId = (payload.old as Partial<Message>)?.id;
-          if (oldId)
-            setMessagesRef.current((prev) =>
-              prev.filter((m) => m.id !== oldId)
-            );
-        },
-      )
-      .subscribe((status) => {
-        console.log(`[realtime] messages:${channelId} →`, status);
-      });
+            if (cancelled || !fullMsg) return;
+
+            setMessagesRef.current((prev) => {
+              if (prev.find((m) => m.id === newId)) return prev;
+              confirmedIds.current.add(newId);
+              return [...prev, fullMsg as Message];
+            });
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "messages",
+            filter: `channel_id=eq.${channelId}`,
+          },
+          async (payload) => {
+            if (cancelled || !payload.new) return;
+            const { data: fullMsg } = await supabase
+              .from("messages")
+              .select("*, users(full_name, avatar_url)")
+              .eq("id", (payload.new as Message).id)
+              .single();
+            if (!cancelled && fullMsg) {
+              setMessagesRef.current((prev) =>
+                prev.map((m) =>
+                  m.id === (fullMsg as Message).id ? (fullMsg as Message) : m,
+                ),
+              );
+            }
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "messages",
+            filter: `channel_id=eq.${channelId}`,
+          },
+          (payload) => {
+            if (cancelled) return;
+            const oldId = (payload.old as Partial<Message>)?.id;
+            if (oldId)
+              setMessagesRef.current((prev) =>
+                prev.filter((m) => m.id !== oldId)
+              );
+          },
+        )
+        .subscribe((status) => {
+          console.log(`[realtime] messages:${channelId} →`, status);
+        });
+    });
 
     return () => {
       cancelled = true;
-      realtimeClient.removeChannel(sub);
+      if (sub) realtimeClient.removeChannel(sub);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
@@ -280,48 +289,52 @@ export function useThreadMessages(parentMessageId: string | null) {
         setLoading(false);
       });
 
-    const channel = realtimeClient
-      .channel(`thread:${parentMessageId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `parent_message_id=eq.${parentMessageId}`,
-        },
-        async (payload) => {
-          if (!payload.new) return;
-          const { data: fullMsg } = await supabase
-            .from("messages")
-            .select("*, users(full_name, avatar_url)")
-            .eq("id", (payload.new as Message).id)
-            .single();
-          if (fullMsg) {
-            setReplies((prev) => {
-              if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
-              return [...prev, fullMsg as Message];
-            });
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "messages",
-          filter: `parent_message_id=eq.${parentMessageId}`,
-        },
-        (payload) => {
-          const oldId = (payload.old as Partial<Message>)?.id;
-          if (oldId) setReplies((prev) => prev.filter((m) => m.id !== oldId));
-        },
-      )
-      .subscribe();
+    let channel: ReturnType<typeof realtimeClient.channel> | null = null;
+
+    authReady.then(() => {
+      channel = realtimeClient
+        .channel(`thread:${parentMessageId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `parent_message_id=eq.${parentMessageId}`,
+          },
+          async (payload) => {
+            if (!payload.new) return;
+            const { data: fullMsg } = await supabase
+              .from("messages")
+              .select("*, users(full_name, avatar_url)")
+              .eq("id", (payload.new as Message).id)
+              .single();
+            if (fullMsg) {
+              setReplies((prev) => {
+                if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
+                return [...prev, fullMsg as Message];
+              });
+            }
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "messages",
+            filter: `parent_message_id=eq.${parentMessageId}`,
+          },
+          (payload) => {
+            const oldId = (payload.old as Partial<Message>)?.id;
+            if (oldId) setReplies((prev) => prev.filter((m) => m.id !== oldId));
+          },
+        )
+        .subscribe();
+    });
 
     return () => {
-      realtimeClient.removeChannel(channel);
+      if (channel) realtimeClient.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parentMessageId]);

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useSupabaseClient } from "@/lib/supabase/client";
+import { useSupabaseClient, authReady } from "@/lib/supabase/client";
 import { realtimeClient } from "@/hooks/useRealtime";
 import { useWorkspaceStore } from "@/store/workspace";
 import { Channel, Document, Notification, User, Workspace } from "@/types";
@@ -118,45 +118,53 @@ export function useWorkspace(workspaceId: string) {
       )
       .subscribe();
 
-    // ✅ Realtime listener — new channels created by any workspace member
-    const channelsSub = realtimeClient
-      .channel(`workspace_channels:${workspaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "channels",
-          filter: `workspace_id=eq.${workspaceId}`,
-        },
-        (payload) => {
-          if (payload.new) addChannel(payload.new as Channel);
-        },
-      )
-      .subscribe();
+    // ✅ Realtime listeners for channels + docs — wait for auth before subscribing
+    let cancelledWs = false;
+    let channelsSub: ReturnType<typeof realtimeClient.channel> | null = null;
+    let docsSub: ReturnType<typeof realtimeClient.channel> | null = null;
 
-    // ✅ Realtime listener — new documents created by any workspace member
-    const docsSub = realtimeClient
-      .channel(`workspace_docs:${workspaceId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "documents",
-          filter: `workspace_id=eq.${workspaceId}`,
-        },
-        (payload) => {
-          if (payload.new) addDocument(payload.new as Document);
-        },
-      )
-      .subscribe();
+    authReady.then(() => {
+      if (cancelledWs) return;
+
+      channelsSub = realtimeClient
+        .channel(`workspace_channels:${workspaceId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "channels",
+            filter: `workspace_id=eq.${workspaceId}`,
+          },
+          (payload) => {
+            if (payload.new) addChannel(payload.new as Channel);
+          },
+        )
+        .subscribe();
+
+      docsSub = realtimeClient
+        .channel(`workspace_docs:${workspaceId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "documents",
+            filter: `workspace_id=eq.${workspaceId}`,
+          },
+          (payload) => {
+            if (payload.new) addDocument(payload.new as Document);
+          },
+        )
+        .subscribe();
+    });
 
     return () => {
+      cancelledWs = true;
       client.removeChannel(notifChannel);
       client.removeChannel(msgChannel);
-      realtimeClient.removeChannel(channelsSub);
-      realtimeClient.removeChannel(docsSub);
+      if (channelsSub) realtimeClient.removeChannel(channelsSub);
+      if (docsSub) realtimeClient.removeChannel(docsSub);
     };
   }, [
     workspaceId,

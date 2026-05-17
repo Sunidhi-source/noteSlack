@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useSupabaseClient } from "@/lib/supabase/client";
+import { useSupabaseClient, authReady } from "@/lib/supabase/client";
 import { realtimeClient } from "@/hooks/useRealtime";
 import { DmMessage } from "@/types";
 
@@ -26,6 +26,7 @@ export function useDmMessages(conversationId: string | null) {
     confirmedIds.current.clear();
     queueMicrotask(() => setLoading(true));
 
+    // Fetch existing messages
     supabase
       .from("dm_messages")
       .select("*, users(full_name, avatar_url)")
@@ -38,46 +39,54 @@ export function useDmMessages(conversationId: string | null) {
         setLoading(false);
       });
 
-    // ✅ Use stable realtimeClient (has WS auth) instead of the query client
-    const channel = realtimeClient
-      .channel(`dm:${conversationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "dm_messages",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        async (payload) => {
-          if (!payload.new) return;
-          const newId = (payload.new as DmMessage).id;
+    let cancelled = false;
+    let channel: ReturnType<typeof realtimeClient.channel> | null = null;
 
-          // ✅ Skip our own messages — already added optimistically in sendMessage
-          if (confirmedIds.current.has(newId)) return;
+    // ✅ Wait for auth token before subscribing — avoids the race condition
+    //    where the WS connects as anon and RLS blocks postgres_changes events
+    authReady.then(() => {
+      if (cancelled) return;
 
-          const { data: fullMsg } = await supabase
-            .from("dm_messages")
-            .select("*, users(full_name, avatar_url)")
-            .eq("id", newId)
-            .single();
+      channel = realtimeClient
+        .channel(`dm:${conversationId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "dm_messages",
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          async (payload) => {
+            if (cancelled || !payload.new) return;
+            const newId = (payload.new as DmMessage).id;
 
-          if (fullMsg) {
+            // ✅ Skip our own messages — already added optimistically in sendMessage
+            if (confirmedIds.current.has(newId)) return;
+
+            const { data: fullMsg } = await supabase
+              .from("dm_messages")
+              .select("*, users(full_name, avatar_url)")
+              .eq("id", newId)
+              .single();
+
+            if (cancelled || !fullMsg) return;
+
             setMessagesRef.current((prev) => {
-              if (prev.find((m) => m.id === (fullMsg as DmMessage).id))
-                return prev;
+              if (prev.find((m) => m.id === (fullMsg as DmMessage).id)) return prev;
               confirmedIds.current.add((fullMsg as DmMessage).id);
               return [...prev, fullMsg as DmMessage];
             });
-          }
-        },
-      )
-      .subscribe((status) => {
-        console.log(`[realtime] dm:${conversationId} →`, status);
-      });
+          },
+        )
+        .subscribe((status) => {
+          console.log(`[realtime] dm:${conversationId} →`, status);
+        });
+    });
 
     return () => {
-      realtimeClient.removeChannel(channel);
+      cancelled = true;
+      if (channel) realtimeClient.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
@@ -94,7 +103,7 @@ export function useDmMessages(conversationId: string | null) {
         sender_id: user.id,
         content: content.trim(),
         created_at: new Date().toISOString(),
-        read_at: null, // ← fixes the TypeScript build error
+        read_at: null,
         users: { full_name: user.fullName ?? "You", avatar_url: null },
       };
       setMessagesRef.current((prev) => [...prev, optimistic]);

@@ -11,6 +11,13 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 let supabaseInstance: SupabaseClient | null = null;
 let currentToken: string | null = null;
 
+// ✅ Auth-ready promise — resolves once the first JWT is fetched
+// Subscriptions that depend on auth should wait for this before subscribing
+let authReadyResolve: (() => void) | null = null;
+export const authReady: Promise<void> = new Promise((resolve) => {
+  authReadyResolve = resolve;
+});
+
 function getSupabaseInstance(): SupabaseClient {
   if (supabaseInstance) return supabaseInstance;
 
@@ -48,6 +55,7 @@ export function registerRealtimeAuthSetter(fn: (token: string) => void) {
 export function useSupabaseClient(): SupabaseClient {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const refreshInterval = useRef<ReturnType<typeof setInterval>>(undefined);
+  const hasSetToken = useRef(false);
 
   const client = getSupabaseInstance();
 
@@ -61,8 +69,15 @@ export function useSupabaseClient(): SupabaseClient {
           currentToken = token;
           // ✅ Set on query client
           supabaseInstance?.realtime.setAuth(token);
-          // ✅ Set on realtime-only client
+          // ✅ Set on realtime-only client + reconnect its WebSocket so the
+          //    new token is picked up on the next heartbeat/subscribe
           realtimeAuthSetter?.(token);
+
+          // ✅ Signal auth is ready on first successful token fetch
+          if (!hasSetToken.current) {
+            hasSetToken.current = true;
+            authReadyResolve?.();
+          }
         }
       } catch {
         // fallback to anon

@@ -55,8 +55,8 @@ export interface Notification {
   link?: string | null;
   type: string;
   created_at: string;
-  workspace_id?: string | null; // ✅ add
-  status?: "pending" | "accepted" | "declined" | null; // ✅ add
+  workspace_id?: string | null;   // ✅ add
+  status?: 'pending' | 'accepted' | 'declined' | null;  // ✅ add
 }
 export interface Document {
   id: string;

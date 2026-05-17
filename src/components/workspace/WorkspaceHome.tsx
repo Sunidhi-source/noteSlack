@@ -13,7 +13,7 @@ import { formatRelativeTime, generateUserColor, getInitials } from "@/lib/utils"
 import { CreateChannelModal } from "@/components/sidebar/CreateChannelModal";
 import { CreateDocModal } from "@/components/sidebar/CreateDocModal";
 import InviteMemberModal from "@/components/sidebar/InviteMemberModal";
-import { useSupabaseClient } from "@/lib/supabase/client";
+import { useSupabaseClient, authReady } from "@/lib/supabase/client";
 import { realtimeClient } from "@/hooks/useRealtime";
 import { Message } from "@/types";
 
@@ -103,33 +103,43 @@ export function WorkspaceHome({ workspaceId }: Props) {
         setGeneralLoading(false);
       });
 
-    // ✅ Use stable realtimeClient (has WS auth) with a stable channel name
-    const ch = realtimeClient
-      .channel(`home-general:${generalChannel.id}`)
-      .on("postgres_changes", {
-        event: "INSERT", schema: "public", table: "messages",
-        filter: `channel_id=eq.${generalChannel.id}`,
-      }, async (payload) => {
-        if (!payload.new) return;
-        const { data: fullMsg } = await supabase
-          .from("messages")
-          .select("*, users(full_name, avatar_url)")
-          .eq("id", (payload.new as Message).id)
-          .single();
-        if (fullMsg) {
-          setGeneralMessages((prev) => {
-            if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
-            return [...prev, fullMsg as Message].slice(-25);
-          });
-          setNewMsgIds((prev) => new Set([...prev, (fullMsg as Message).id]));
-          setTimeout(() => {
-            setNewMsgIds((prev) => { const n = new Set(prev); n.delete((fullMsg as Message).id); return n; });
-          }, 2500);
-        }
-      })
-      .subscribe();
+    // ✅ Use stable realtimeClient with stable channel name
+    // ✅ Wait for auth token before subscribing to postgres_changes (fixes race condition)
+    let cancelled = false;
+    let ch: ReturnType<typeof realtimeClient.channel> | null = null;
 
-    return () => { realtimeClient.removeChannel(ch); };
+    authReady.then(() => {
+      if (cancelled) return;
+      ch = realtimeClient
+        .channel(`home-general:${generalChannel.id}`)
+        .on("postgres_changes", {
+          event: "INSERT", schema: "public", table: "messages",
+          filter: `channel_id=eq.${generalChannel.id}`,
+        }, async (payload) => {
+          if (cancelled || !payload.new) return;
+          const { data: fullMsg } = await supabase
+            .from("messages")
+            .select("*, users(full_name, avatar_url)")
+            .eq("id", (payload.new as Message).id)
+            .single();
+          if (fullMsg) {
+            setGeneralMessages((prev) => {
+              if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
+              return [...prev, fullMsg as Message].slice(-25);
+            });
+            setNewMsgIds((prev) => new Set([...prev, (fullMsg as Message).id]));
+            setTimeout(() => {
+              setNewMsgIds((prev) => { const n = new Set(prev); n.delete((fullMsg as Message).id); return n; });
+            }, 2500);
+          }
+        })
+        .subscribe();
+    });
+
+    return () => {
+      cancelled = true;
+      if (ch) realtimeClient.removeChannel(ch);
+    };
   }, [generalChannel?.id, supabase]);
 
   // Auto-scroll general feed
