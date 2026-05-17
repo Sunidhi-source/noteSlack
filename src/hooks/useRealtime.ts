@@ -6,8 +6,8 @@ import { createClient } from "@supabase/supabase-js";
 import { useSupabaseClient, registerRealtimeAuthSetter } from "@/lib/supabase/client";
 import { Message, TypingUser } from "@/types";
 
-// ✅ Stable module-level realtime client — never recreated
-const realtimeClient = createClient(
+// ✅ Stable module-level realtime client — never recreated — exported for use in other hooks
+export const realtimeClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   {

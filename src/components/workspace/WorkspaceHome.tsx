@@ -14,6 +14,7 @@ import { CreateChannelModal } from "@/components/sidebar/CreateChannelModal";
 import { CreateDocModal } from "@/components/sidebar/CreateDocModal";
 import InviteMemberModal from "@/components/sidebar/InviteMemberModal";
 import { useSupabaseClient } from "@/lib/supabase/client";
+import { realtimeClient } from "@/hooks/useRealtime";
 import { Message } from "@/types";
 
 interface Props { workspaceId: string; }
@@ -102,8 +103,9 @@ export function WorkspaceHome({ workspaceId }: Props) {
         setGeneralLoading(false);
       });
 
-    const ch = supabase
-      .channel(`home-general-${generalChannel.id}-${Date.now()}`)
+    // ✅ Use stable realtimeClient (has WS auth) with a stable channel name
+    const ch = realtimeClient
+      .channel(`home-general:${generalChannel.id}`)
       .on("postgres_changes", {
         event: "INSERT", schema: "public", table: "messages",
         filter: `channel_id=eq.${generalChannel.id}`,
@@ -127,7 +129,7 @@ export function WorkspaceHome({ workspaceId }: Props) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(ch); };
+    return () => { realtimeClient.removeChannel(ch); };
   }, [generalChannel?.id, supabase]);
 
   // Auto-scroll general feed

@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useSupabaseClient } from "@/lib/supabase/client";
+import { realtimeClient } from "@/hooks/useRealtime";
 import { useWorkspaceStore } from "@/store/workspace";
 import { Channel, Document, Notification, User, Workspace } from "@/types";
 
@@ -20,6 +21,8 @@ export function useWorkspace(workspaceId: string) {
     setMembers,
     setNotifications,
     addNotification,
+    addChannel,
+    addDocument,
     incrementUnread,
   } = useWorkspaceStore();
 
@@ -115,9 +118,45 @@ export function useWorkspace(workspaceId: string) {
       )
       .subscribe();
 
+    // ✅ Realtime listener — new channels created by any workspace member
+    const channelsSub = realtimeClient
+      .channel(`workspace_channels:${workspaceId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "channels",
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        (payload) => {
+          if (payload.new) addChannel(payload.new as Channel);
+        },
+      )
+      .subscribe();
+
+    // ✅ Realtime listener — new documents created by any workspace member
+    const docsSub = realtimeClient
+      .channel(`workspace_docs:${workspaceId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "documents",
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        (payload) => {
+          if (payload.new) addDocument(payload.new as Document);
+        },
+      )
+      .subscribe();
+
     return () => {
       client.removeChannel(notifChannel);
       client.removeChannel(msgChannel);
+      realtimeClient.removeChannel(channelsSub);
+      realtimeClient.removeChannel(docsSub);
     };
   }, [
     workspaceId,
@@ -128,6 +167,8 @@ export function useWorkspace(workspaceId: string) {
     setMembers,
     setNotifications,
     addNotification,
+    addChannel,
+    addDocument,
     incrementUnread,
     channelId,
   ]);
