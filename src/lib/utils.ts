@@ -10,6 +10,7 @@ export function cn(...inputs: ClassValue[]) {
  * Returns initials from a full name (e.g. "John Doe" → "JD")
  */
 export function getInitials(name: string): string {
+  if (!name || !name.trim()) return "?"; // ✅ guard
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -29,6 +30,7 @@ const COLORS = [
 ];
 
 export function generateUserColor(seed: string): string {
+  if (!seed) return COLORS[0]; // ✅ guard against undefined/empty
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
     hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
@@ -40,6 +42,7 @@ export function generateUserColor(seed: string): string {
  * Human-readable relative time (e.g. "3 minutes ago", "yesterday")
  */
 export function formatRelativeTime(dateStr: string): string {
+  if (!dateStr) return ""; // ✅ guard
   try {
     return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
   } catch {
@@ -48,6 +51,7 @@ export function formatRelativeTime(dateStr: string): string {
 }
 
 export function truncate(str: string, maxLen: number): string {
+  if (!str) return ""; // ✅ guard
   if (str.length <= maxLen) return str;
   return str.slice(0, maxLen) + "…";
 }

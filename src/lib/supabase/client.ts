@@ -1,48 +1,28 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { useAuth } from "@clerk/nextjs";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-if (typeof window !== "undefined" && (!supabaseUrl || !supabaseAnonKey)) {
-  throw new Error(
-    "Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are required.",
-  );
-}
-
+// ✅ Single global instance for queries
 let supabaseInstance: SupabaseClient | null = null;
+let currentToken: string | null = null;
 
-const authState = {
-  getToken: null as null | (() => Promise<string | null>),
-  isLoaded: false,
-  isSignedIn: false,
-};
-
-function getSupabaseClient(): SupabaseClient {
+function getSupabaseInstance(): SupabaseClient {
   if (supabaseInstance) return supabaseInstance;
 
   supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
     global: {
       fetch: async (url: RequestInfo | URL, options: RequestInit = {}) => {
         const headers = new Headers(options?.headers);
-
         headers.set("Accept", "application/json");
         headers.set("Content-Type", "application/json");
-
-        if (authState.isLoaded && authState.isSignedIn && authState.getToken) {
-          try {
-            const token = await authState.getToken();
-            if (token) {
-              headers.set("Authorization", `Bearer ${token}`);
-            }
-          } catch {
-            // fallback to anon
-          }
+        if (currentToken) {
+          headers.set("Authorization", `Bearer ${currentToken}`);
         }
-
         return fetch(url, { ...options, headers });
       },
     },
@@ -56,24 +36,48 @@ function getSupabaseClient(): SupabaseClient {
     },
   });
 
-  // ✅ FIX: Removed supabaseInstance.realtime.setAuth(null)
-  // That line was wiping the Realtime auth token immediately after
-  // client init, causing all Realtime broadcasts to fail with 422.
-  // The token is now set correctly in DocumentView.tsx after getToken().
-
   return supabaseInstance;
+}
+
+// ✅ Called from useRealtime to keep realtime client in sync
+let realtimeAuthSetter: ((token: string) => void) | null = null;
+export function registerRealtimeAuthSetter(fn: (token: string) => void) {
+  realtimeAuthSetter = fn;
 }
 
 export function useSupabaseClient(): SupabaseClient {
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  const refreshInterval = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  const client = getSupabaseInstance();
 
   useEffect(() => {
-    authState.getToken = () =>
-      getToken({ template: "supabase" }).catch(() => null);
+    if (!isLoaded || !isSignedIn) return;
 
-    authState.isLoaded = isLoaded;
-    authState.isSignedIn = isSignedIn ?? false;
-  }, [getToken, isLoaded, isSignedIn]);
+    const setToken = async () => {
+      try {
+        const token = await getToken({ template: "supabase" });
+        if (token) {
+          currentToken = token;
+          // ✅ Set on query client
+          supabaseInstance?.realtime.setAuth(token);
+          // ✅ Set on realtime-only client
+          realtimeAuthSetter?.(token);
+        }
+      } catch {
+        // fallback to anon
+      }
+    };
 
-  return getSupabaseClient();
+    setToken();
+
+    // ✅ Refresh every 50s before 60s expiry
+    refreshInterval.current = setInterval(setToken, 50_000);
+
+    return () => {
+      clearInterval(refreshInterval.current);
+    };
+  }, [isLoaded, isSignedIn, getToken]);
+
+  return client;
 }

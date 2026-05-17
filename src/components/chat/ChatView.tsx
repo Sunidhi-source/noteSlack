@@ -32,9 +32,9 @@ export function ChatView({ workspaceId, channelId }: Props) {
   const { channels, members }  = useWorkspaceStore();
   const channel = channels.find((c) => c.id === channelId);
 
-  const [input, setInput]           = useState("");
-  const [sending, setSending]       = useState(false);
-  const [editingId, setEditingId]   = useState<string | null>(null);
+  const [input, setInput]             = useState("");
+  const [sending, setSending]         = useState(false);
+  const [editingId, setEditingId]     = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
@@ -44,7 +44,11 @@ export function ChatView({ workspaceId, channelId }: Props) {
   const [showMembers, setShowMembers] = useState(false);
   const [justSentIds, setJustSentIds] = useState<Set<string>>(new Set());
 
-  const topLevelMessages = messages.filter((m) => !m.parent_message_id);
+  // Guard: only render messages that have a valid string id and are top-level
+  const topLevelMessages = messages.filter(
+    (m) => typeof m.id === "string" && !!m.id && !m.parent_message_id
+  );
+
   const bottomRef   = useRef<HTMLDivElement>(null);
   const scrollRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,7 +89,6 @@ export function ChatView({ workspaceId, channelId }: Props) {
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
-    // Optimistic insert — show message instantly before DB confirms
     const tempId = `temp-${Date.now()}`;
     const optimisticMsg: Message = {
       id: tempId,
@@ -101,35 +104,32 @@ export function ChatView({ workspaceId, channelId }: Props) {
     addMessage(optimisticMsg);
     setJustSentIds((prev) => new Set([...prev, tempId]));
 
-    // Persist to DB, then fetch the full message with user join to replace the temp
-    const { data: inserted } = await supabase
+    // Single query returns full row with user join immediately
+    const { data: inserted, error } = await supabase
       .from("messages")
       .insert({ channel_id: channelId, user_id: user.id, content })
-      .select("id")
+      .select("*, users(full_name, avatar_url)")
       .single();
 
-    if (inserted?.id) {
-      // Fetch with user join separately — more reliable than chaining after insert
-      const { data: fullMsg } = await supabase
-        .from("messages")
-        .select("*, users(full_name, avatar_url)")
-        .eq("id", inserted.id)
-        .single();
-
-      const confirmed = (fullMsg ?? { ...optimisticMsg, id: inserted.id }) as Message;
-      replaceMessage(tempId, confirmed);
+    if (inserted && !error) {
+      replaceMessage(tempId, inserted as Message);
       setJustSentIds((prev) => {
         const n = new Set(prev);
         n.delete(tempId);
-        n.add(confirmed.id);
+        n.add((inserted as Message).id);
         return n;
       });
-      setTimeout(() => setJustSentIds((prev) => { const n = new Set(prev); n.delete(confirmed.id); return n; }), 1500);
+      setTimeout(() => {
+        setJustSentIds((prev) => {
+          const n = new Set(prev);
+          n.delete((inserted as Message).id);
+          return n;
+        });
+      }, 1500);
     } else {
-      // DB failed — remove the optimistic message so UI is consistent
-      setJustSentIds((prev) => { const n = new Set(prev); n.delete(tempId); return n; });
-      // Also remove from messages list
       replaceMessage(tempId, { ...optimisticMsg, id: "__remove__" });
+      setJustSentIds((prev) => { const n = new Set(prev); n.delete(tempId); return n; });
+      console.error("Failed to send message:", error);
     }
 
     setSending(false);
@@ -137,7 +137,9 @@ export function ChatView({ workspaceId, channelId }: Props) {
 
   const handleEdit = async (messageId: string) => {
     if (!editContent.trim()) return;
-    await supabase.from("messages").update({ content: editContent.trim(), edited_at: new Date().toISOString() }).eq("id", messageId);
+    await supabase.from("messages")
+      .update({ content: editContent.trim(), edited_at: new Date().toISOString() })
+      .eq("id", messageId);
     setEditingId(null);
     setEditContent("");
   };
@@ -163,10 +165,11 @@ export function ChatView({ workspaceId, channelId }: Props) {
     textareaRef.current?.focus();
   };
 
-  // Group by date
   const groupedMessages: { date: string; msgs: Message[] }[] = [];
   topLevelMessages.forEach((msg) => {
-    const date = new Date(msg.created_at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    const date = new Date(msg.created_at).toLocaleDateString("en-US", {
+      weekday: "long", month: "long", day: "numeric",
+    });
     const last = groupedMessages[groupedMessages.length - 1];
     if (last && last.date === date) last.msgs.push(msg);
     else groupedMessages.push({ date, msgs: [msg] });
@@ -180,8 +183,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
         <div style={{
           height: "var(--header-h)", padding: "0 16px",
           display: "flex", alignItems: "center", gap: 10,
-          borderBottom: "1px solid var(--border)",
-          flexShrink: 0,
+          borderBottom: "1px solid var(--border)", flexShrink: 0,
           background: "rgba(5,5,8,0.85)", backdropFilter: "blur(20px)",
           position: "relative", zIndex: 10,
         }}>
@@ -190,14 +192,21 @@ export function ChatView({ workspaceId, channelId }: Props) {
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               width: 30, height: 30, borderRadius: 8,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid var(--border)",
+              background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)",
               color: "var(--text-muted)", textDecoration: "none",
               transition: "all 0.15s", flexShrink: 0,
             }}
             title="Back to workspace"
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--accent-soft)"; (e.currentTarget as HTMLElement).style.color = "var(--accent)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(124,109,250,0.3)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)"; (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "var(--accent-soft)";
+              (e.currentTarget as HTMLElement).style.color = "var(--accent)";
+              (e.currentTarget as HTMLElement).style.borderColor = "rgba(124,109,250,0.3)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+              (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+            }}
           >
             <ArrowLeft size={13} />
           </Link>
@@ -208,8 +217,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
             width: 32, height: 32, borderRadius: 9,
             background: "linear-gradient(135deg, rgba(124,109,250,0.2), rgba(124,109,250,0.1))",
             border: "1px solid rgba(124,109,250,0.25)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>
             <Hash size={15} style={{ color: "var(--accent)" }} />
           </div>
@@ -264,8 +272,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
         {showMembers && (
           <div style={{
             background: "rgba(5,5,8,0.9)", backdropFilter: "blur(16px)",
-            borderBottom: "1px solid var(--border)",
-            padding: "10px 16px",
+            borderBottom: "1px solid var(--border)", padding: "10px 16px",
             display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
             animation: "fadeUp 0.2s ease",
           }}>
@@ -329,8 +336,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
                 background: "linear-gradient(135deg, rgba(124,109,250,0.2), rgba(124,109,250,0.08))",
                 border: "1px solid rgba(124,109,250,0.2)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                margin: "0 auto 18px",
-                boxShadow: "0 0 32px rgba(124,109,250,0.15)",
+                margin: "0 auto 18px", boxShadow: "0 0 32px rgba(124,109,250,0.15)",
               }}>
                 <Hash size={26} style={{ color: "var(--accent)" }} />
               </div>
@@ -343,18 +349,18 @@ export function ChatView({ workspaceId, channelId }: Props) {
 
           {groupedMessages.map(({ date, msgs }) => (
             <div key={date}>
-              {/* Date divider */}
               <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 8px", position: "sticky", top: 0, zIndex: 2, background: "linear-gradient(180deg, var(--bg-base) 60%, transparent)" }}>
                 <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
                 <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 700, whiteSpace: "nowrap", background: "var(--bg-surface)", padding: "3px 12px", borderRadius: 99, border: "1px solid var(--border)", letterSpacing: "0.04em" }}>{date}</span>
                 <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
               </div>
 
-              {msgs.map((msg) => {
-                const name   = msg.users?.full_name ?? "Unknown";
-                const color  = generateUserColor(msg.user_id);
-                const isOwn  = msg.user_id === user?.id;
-                const isNew  = justSentIds.has(msg.id);
+              {/* Guard: filter out any messages without a valid id before rendering */}
+              {msgs.filter((msg) => typeof msg.id === "string" && !!msg.id).map((msg) => {
+                const name  = msg.users?.full_name ?? "Unknown";
+                const color = generateUserColor(msg.user_id ?? "");
+                const isOwn = msg.user_id === user?.id;
+                const isNew = justSentIds.has(msg.id);
 
                 return (
                   <div
@@ -376,7 +382,6 @@ export function ChatView({ workspaceId, channelId }: Props) {
                       if (actions) actions.style.opacity = "0";
                     }}
                   >
-                    {/* Avatar */}
                     <div style={{
                       width: 36, height: 36, borderRadius: 10,
                       background: color, display: "flex", alignItems: "center",
@@ -423,10 +428,12 @@ export function ChatView({ workspaceId, channelId }: Props) {
                         </p>
                       )}
 
-                      {!msg.id.startsWith("temp-") && <MessageReactions messageId={msg.id} />}
+                      {/* Guard: only render reactions for real (non-temp) messages with valid id */}
+                      {typeof msg.id === "string" && !msg.id.startsWith("temp-") && (
+                        <MessageReactions messageId={msg.id} />
+                      )}
                     </div>
 
-                    {/* Hover actions */}
                     <div
                       className="msg-actions"
                       style={{
@@ -477,8 +484,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
               background: "linear-gradient(135deg, var(--accent), #9170ff)",
               border: "none", borderRadius: "50%", width: 36, height: 36,
               display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer",
-              boxShadow: "0 4px 20px var(--accent-glow)",
+              cursor: "pointer", boxShadow: "0 4px 20px var(--accent-glow)",
               zIndex: 10, animation: "pop-in 0.2s ease",
             }}
           >
@@ -493,8 +499,7 @@ export function ChatView({ workspaceId, channelId }: Props) {
               display: "flex", gap: 6, padding: "10px 12px",
               background: "var(--bg-surface)", border: "1px solid var(--border)",
               borderRadius: 12, marginBottom: 8, flexWrap: "wrap",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
-              animation: "fadeUp 0.15s ease",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.5)", animation: "fadeUp 0.15s ease",
             }}>
               {QUICK_EMOJIS.map((em) => (
                 <button key={em} onClick={() => insertEmoji(em)}
@@ -510,9 +515,8 @@ export function ChatView({ workspaceId, channelId }: Props) {
             className="input-glow"
             style={{
               display: "flex", alignItems: "flex-end", gap: 10,
-              background: "var(--bg-overlay)",
-              borderRadius: 14, border: "1px solid var(--border)",
-              padding: "8px 12px", transition: "all 0.2s",
+              background: "var(--bg-overlay)", borderRadius: 14,
+              border: "1px solid var(--border)", padding: "8px 12px", transition: "all 0.2s",
             }}
           >
             <button
@@ -585,7 +589,12 @@ export function ChatView({ workspaceId, channelId }: Props) {
   );
 }
 
-function ActionBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title?: string; danger?: boolean }) {
+function ActionBtn({ children, onClick, title, danger }: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title?: string;
+  danger?: boolean;
+}) {
   return (
     <button
       onClick={onClick} title={title}
