@@ -9,6 +9,7 @@ import {
   Search, UserPlus, Home,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/store/workspace";
+import { useWorkspace } from "@/hooks/useWorkspace";
 import { CreateChannelModal } from "./CreateChannelModal";
 import { CreateDocModal } from "./CreateDocModal";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -31,7 +32,16 @@ export function Sidebar() {
   const [showSearch, setShowSearch]               = useState(false);
   const [showInvite, setShowInvite]               = useState(false);
 
-  const workspaceId = currentWorkspace?.id;
+  // ✅ FIX: Extract workspaceId from URL so the Sidebar starts data-fetching
+  //    immediately — in parallel with the page — instead of waiting for the
+  //    page's useWorkspace to populate currentWorkspace first. This was the
+  //    root cause of the ~1min delay (authReady blocked) and stats showing 0
+  //    (store empty when WorkspaceHome rendered).
+  const urlWorkspaceId = pathname.match(/\/workspace\/([^/]+)/)?.[1] ?? "";
+  // useWorkspace must always be called (no conditional hooks). It's a no-op when id is "".
+  useWorkspace(urlWorkspaceId);
+
+  const workspaceId = currentWorkspace?.id ?? urlWorkspaceId;
   if (!workspaceId) return null;
 
   const dmMembers = (members ?? []).filter((m: User) => m.id !== user?.id);
