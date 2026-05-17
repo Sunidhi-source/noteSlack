@@ -103,15 +103,19 @@ export function WorkspaceHome({ workspaceId }: Props) {
         setGeneralLoading(false);
       });
 
-    // ✅ Use stable realtimeClient with stable channel name
-    // ✅ Wait for auth token before subscribing to postgres_changes (fixes race condition)
+    // ✅ FIX: hoist channel ref outside the authReady gap so cleanup always
+    //    has the reference. Previously ch was null when cleanup ran before
+    //    authReady resolved, leaking a dead subscription that never fired —
+    //    this was why messages only appeared after a manual page refresh.
     let cancelled = false;
     let ch: ReturnType<typeof realtimeClient.channel> | null = null;
 
-    authReady.then(() => {
+    const setup = async () => {
+      await authReady;
       if (cancelled) return;
+
       ch = realtimeClient
-        .channel(`home-general:${generalChannel.id}`)
+        .channel(`home-general:${generalChannel.id}:${Date.now()}`)
         .on("postgres_changes", {
           event: "INSERT", schema: "public", table: "messages",
           filter: `channel_id=eq.${generalChannel.id}`,
@@ -122,7 +126,7 @@ export function WorkspaceHome({ workspaceId }: Props) {
             .select("*, users(full_name, avatar_url)")
             .eq("id", (payload.new as Message).id)
             .single();
-          if (fullMsg) {
+          if (fullMsg && !cancelled) {
             setGeneralMessages((prev) => {
               if (prev.find((m) => m.id === (fullMsg as Message).id)) return prev;
               return [...prev, fullMsg as Message].slice(-25);
@@ -133,12 +137,25 @@ export function WorkspaceHome({ workspaceId }: Props) {
             }, 2500);
           }
         })
-        .subscribe();
-    });
+        .subscribe((status) => {
+          console.log(`[realtime] home-general:${generalChannel.id} →`, status);
+        });
+    };
+
+    setup();
 
     return () => {
       cancelled = true;
-      if (ch) realtimeClient.removeChannel(ch);
+      // ✅ FIX: whether ch was set before or after this cleanup runs,
+      //    we always remove it — prevents ghost subscriptions.
+      if (ch) {
+        realtimeClient.removeChannel(ch);
+        ch = null;
+      } else {
+        authReady.then(() => {
+          if (ch) { realtimeClient.removeChannel(ch); ch = null; }
+        });
+      }
     };
   }, [generalChannel?.id, supabase]);
 
@@ -164,9 +181,42 @@ export function WorkspaceHome({ workspaceId }: Props) {
     setQuickSending(true);
     const content = quickMsg.trim();
     setQuickMsg("");
-    await supabase
+
+    // ✅ FIX: Optimistically add own message immediately so the sender
+    //    sees it right away without waiting for a realtime echo.
+    //    The realtime INSERT handler deduplicates by id, so when the real
+    //    row arrives we replace the temp entry seamlessly.
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      channel_id: generalChannel.id,
+      user_id: user.id,
+      content,
+      created_at: new Date().toISOString(),
+      edited_at: null,
+      parent_message_id: null,
+      is_pinned: false,
+      users: { full_name: user.fullName ?? "You", avatar_url: null },
+    };
+    setGeneralMessages((prev) => [...prev, optimisticMsg].slice(-25));
+
+    const { data: inserted, error } = await supabase
       .from("messages")
-      .insert({ channel_id: generalChannel.id, user_id: user.id, content });
+      .insert({ channel_id: generalChannel.id, user_id: user.id, content })
+      .select("*, users(full_name, avatar_url)")
+      .single();
+
+    if (inserted && !error) {
+      // Replace temp entry with the real persisted row
+      setGeneralMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? (inserted as Message) : m))
+      );
+    } else {
+      // On error, remove the optimistic message
+      setGeneralMessages((prev) => prev.filter((m) => m.id !== tempId));
+      console.error("Failed to send message:", error);
+    }
+
     setQuickSending(false);
     setQuickSent(true);
     setTimeout(() => setQuickSent(false), 2000);

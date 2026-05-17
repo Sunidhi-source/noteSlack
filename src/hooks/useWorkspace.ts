@@ -118,16 +118,21 @@ export function useWorkspace(workspaceId: string) {
       )
       .subscribe();
 
-    // ✅ Realtime listeners for channels + docs — wait for auth before subscribing
+    // ✅ FIX: Use async/await pattern so the channel refs are always set
+    //    before cleanup can run. Previously authReady.then() assigned to
+    //    channelsSub/docsSub *after* cleanup ran if the component unmounted
+    //    quickly, leaking subscriptions and preventing new-channel/doc events
+    //    from showing in the sidebar without a page refresh.
     let cancelledWs = false;
     let channelsSub: ReturnType<typeof realtimeClient.channel> | null = null;
     let docsSub: ReturnType<typeof realtimeClient.channel> | null = null;
 
-    authReady.then(() => {
+    const setupWs = async () => {
+      await authReady;
       if (cancelledWs) return;
 
       channelsSub = realtimeClient
-        .channel(`workspace_channels:${workspaceId}`)
+        .channel(`workspace_channels:${workspaceId}:${Date.now()}`)
         .on(
           "postgres_changes",
           {
@@ -143,7 +148,7 @@ export function useWorkspace(workspaceId: string) {
         .subscribe();
 
       docsSub = realtimeClient
-        .channel(`workspace_docs:${workspaceId}`)
+        .channel(`workspace_docs:${workspaceId}:${Date.now()}`)
         .on(
           "postgres_changes",
           {
@@ -157,14 +162,24 @@ export function useWorkspace(workspaceId: string) {
           },
         )
         .subscribe();
-    });
+    };
+
+    setupWs();
 
     return () => {
       cancelledWs = true;
       client.removeChannel(notifChannel);
       client.removeChannel(msgChannel);
-      if (channelsSub) realtimeClient.removeChannel(channelsSub);
-      if (docsSub) realtimeClient.removeChannel(docsSub);
+      // ✅ FIX: If refs already set, remove immediately; otherwise wait for
+      //    setupWs to finish so we never leave orphaned subscriptions.
+      if (channelsSub) { realtimeClient.removeChannel(channelsSub); channelsSub = null; }
+      if (docsSub) { realtimeClient.removeChannel(docsSub); docsSub = null; }
+      if (!channelsSub && !docsSub) {
+        authReady.then(() => {
+          if (channelsSub) { realtimeClient.removeChannel(channelsSub!); }
+          if (docsSub) { realtimeClient.removeChannel(docsSub!); }
+        });
+      }
     };
   }, [
     workspaceId,
