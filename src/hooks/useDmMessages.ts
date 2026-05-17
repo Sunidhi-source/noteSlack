@@ -64,7 +64,8 @@ export function useDmMessages(conversationId: string | null) {
 
           if (fullMsg) {
             setMessagesRef.current((prev) => {
-              if (prev.find((m) => m.id === (fullMsg as DmMessage).id)) return prev;
+              if (prev.find((m) => m.id === (fullMsg as DmMessage).id))
+                return prev;
               confirmedIds.current.add((fullMsg as DmMessage).id);
               return [...prev, fullMsg as DmMessage];
             });
@@ -93,6 +94,7 @@ export function useDmMessages(conversationId: string | null) {
         sender_id: user.id,
         content: content.trim(),
         created_at: new Date().toISOString(),
+        read_at: null, // ← fixes the TypeScript build error
         users: { full_name: user.fullName ?? "You", avatar_url: null },
       };
       setMessagesRef.current((prev) => [...prev, optimistic]);
