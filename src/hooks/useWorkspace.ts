@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useSupabaseClient, authReady } from "@/lib/supabase/client";
+import { useSupabaseClient, getAuthReady } from "@/lib/supabase/client";
 import { realtimeClient } from "@/hooks/useRealtime";
 import { useWorkspaceStore } from "@/store/workspace";
 import { Channel, Document, Notification, User, Workspace } from "@/types";
@@ -39,51 +39,59 @@ export function useWorkspace(workspaceId: string) {
     const isPrimary = count === 1; // only first caller sets up subscriptions
 
     const client = supabaseRef.current;
-    client
-      .from("workspaces")
-      .select("*")
-      .eq("id", workspaceId)
-      .single()
-      .then(({ data }) => {
-        if (data) setCurrentWorkspace(data as Workspace);
-      });
 
-    client
-      .from("channels")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .then(({ data }) => {
-        if (data) setChannels(data as Channel[]);
-      });
+    // ✅ Wait for JWT to be set before fetching so RLS doesn't block new users
+    const fetchAll = async () => {
+      await getAuthReady(); // ✅ always waits for current user's JWT
 
-    client
-      .from("documents")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .then(({ data }) => {
-        if (data) setDocuments(data as Document[]);
-      });
+      client
+        .from("workspaces")
+        .select("*")
+        .eq("id", workspaceId)
+        .single()
+        .then(({ data }) => {
+          if (data) setCurrentWorkspace(data as Workspace);
+        });
 
-    client
-      .from("workspace_members")
-      .select("users(*)")
-      .eq("workspace_id", workspaceId)
-      .then(({ data }) => {
-        if (data) {
-          const users = data
-            .map((member) => member.users)
-            .filter(Boolean) as unknown as User[];
-          setMembers(users);
-        }
-      });
+      client
+        .from("channels")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .then(({ data }) => {
+          if (data) setChannels(data as Channel[]);
+        });
 
-    client
-      .from("notifications")
-      .select("*")
-      .eq("user_id", user.id)
-      .then(({ data }) => {
-        if (data) setNotifications(data as Notification[]);
-      });
+      client
+        .from("documents")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .then(({ data }) => {
+          if (data) setDocuments(data as Document[]);
+        });
+
+      client
+        .from("workspace_members")
+        .select("users(*)")
+        .eq("workspace_id", workspaceId)
+        .then(({ data }) => {
+          if (data) {
+            const users = data
+              .map((member) => member.users)
+              .filter(Boolean) as unknown as User[];
+            setMembers(users);
+          }
+        });
+
+      client
+        .from("notifications")
+        .select("*")
+        .eq("user_id", user.id)
+        .then(({ data }) => {
+          if (data) setNotifications(data as Notification[]);
+        });
+    };
+
+    fetchAll();
 
     const notifChannel = client
       .channel(`notifications:${user.id}:${channelId}`)
@@ -134,7 +142,7 @@ export function useWorkspace(workspaceId: string) {
 
     if (isPrimary) {
       const setupWs = async () => {
-        await authReady;
+        await getAuthReady();
         if (cancelledWs) return;
 
         channelsSub = realtimeClient

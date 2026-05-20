@@ -72,16 +72,21 @@ export function WorkspaceHome({ workspaceId }: Props) {
   const [newMsgIds, setNewMsgIds]             = useState<Set<string>>(new Set());
   const generalFeedRef = useRef<HTMLDivElement>(null);
 
-  // Stats tracking
-  const [todayMsgCount, setTodayMsgCount] = useState(0);
-  // ✅ Track whether store data has arrived so stats don't flash 0
+  // ✅ Don't render stats until we have real data from store
   const [dataReady, setDataReady] = useState(false);
+  const [todayMsgCount, setTodayMsgCount] = useState(0);
 
   useEffect(() => {
     if (channels.length > 0 || members.length > 0 || documents.length > 0) {
       setDataReady(true);
     }
   }, [channels.length, members.length, documents.length]);
+
+  // ✅ Fallback: after 5s always show real values even if they're 0
+  useEffect(() => {
+    const t = setTimeout(() => setDataReady(true), 5000);
+    return () => clearTimeout(t);
+  }, [workspaceId]);
 
   const generalChannel = channels.find(
     (c) => c.name.toLowerCase() === "general" || c.name.toLowerCase() === "general-discussion"
@@ -233,12 +238,13 @@ export function WorkspaceHome({ workspaceId }: Props) {
     setTimeout(() => setQuickSent(false), 2000);
   }, [quickMsg, user, generalChannel?.id, quickSending, supabase]);
 
-  if (!currentWorkspace) {
+  if (!currentWorkspace || !dataReady) {
     return (
       <div style={{ flex: 1, background: "var(--bg-base)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ width: 48, height: 48, border: "3px solid var(--accent)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
           <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading workspace…</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
     );

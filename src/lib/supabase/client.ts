@@ -7,16 +7,34 @@ import { useAuth } from "@clerk/nextjs";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// ✅ Single global instance for queries
 let supabaseInstance: SupabaseClient | null = null;
 let currentToken: string | null = null;
 
-// ✅ Auth-ready promise — resolves once the first JWT is fetched.
-//    Subscriptions that depend on auth must wait for this before subscribing.
-let authReadyResolve: (() => void) | null = null;
-export const authReady: Promise<void> = new Promise((resolve) => {
-  authReadyResolve = resolve;
-});
+// ✅ Token listeners — anything that needs the JWT registers here
+const tokenListeners: Set<(token: string) => void> = new Set();
+
+export function registerTokenListener(fn: (token: string) => void) {
+  tokenListeners.add(fn);
+  if (currentToken) fn(currentToken); // immediately call if token already set
+  return () => tokenListeners.delete(fn);
+}
+
+// ✅ authReady — a promise that resolves when the first token is set
+// Reset every time to handle user switches (Sarah vs Sunidhi)
+let _authReadyResolve: (() => void) | null = null;
+let _authReady: Promise<void> = new Promise((r) => { _authReadyResolve = r; });
+
+export function getAuthReady(): Promise<void> {
+  return _authReady;
+}
+
+function resetAuthReady() {
+  _authReady = new Promise((r) => { _authReadyResolve = r; });
+  currentToken = null;
+}
+
+// Keep legacy export for existing imports
+export { _authReady as authReady };
 
 function getSupabaseInstance(): SupabaseClient {
   if (supabaseInstance) return supabaseInstance;
@@ -33,9 +51,7 @@ function getSupabaseInstance(): SupabaseClient {
         return fetch(url, { ...options, headers });
       },
     },
-    realtime: {
-      params: { eventsPerSecond: 10 },
-    },
+    realtime: { params: { eventsPerSecond: 10 } },
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -46,60 +62,61 @@ function getSupabaseInstance(): SupabaseClient {
   return supabaseInstance;
 }
 
-// ✅ Called from useRealtime to keep realtime client token in sync.
-//    The setter must ONLY call setAuth — never disconnect/reconnect —
-//    so that existing subscriptions survive token refreshes.
 let realtimeAuthSetter: ((token: string) => void) | null = null;
 export function registerRealtimeAuthSetter(fn: (token: string) => void) {
   realtimeAuthSetter = fn;
 }
 
 export function useSupabaseClient(): SupabaseClient {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { getToken, isLoaded, isSignedIn, userId } = useAuth();
   const refreshInterval = useRef<ReturnType<typeof setInterval>>(undefined);
-  const hasSetToken = useRef(false);
+  const lastUserId = useRef<string | null>(null);
   const lastToken = useRef<string | null>(null);
 
   const client = getSupabaseInstance();
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded) return;
+
+    if (!isSignedIn || !userId) {
+      // User signed out — reset auth
+      resetAuthReady();
+      lastUserId.current = null;
+      lastToken.current = null;
+      return;
+    }
+
+    // ✅ User switched — reset so new user's token is fetched fresh
+    if (lastUserId.current && lastUserId.current !== userId) {
+      resetAuthReady();
+      lastToken.current = null;
+    }
+    lastUserId.current = userId;
 
     const setToken = async () => {
       try {
         const token = await getToken({ template: "supabase" });
-        // ✅ Only update when the token actually changes — avoids redundant
-        //    setAuth calls on every interval tick when token hasn't rotated.
         if (token && token !== lastToken.current) {
           lastToken.current = token;
           currentToken = token;
-          // Update auth on the query client's realtime connection
           supabaseInstance?.realtime.setAuth(token);
-          // Update auth on the dedicated realtime-only client.
-          // CRITICAL: realtimeAuthSetter must NOT call disconnect/reconnect
-          // because that destroys all active channel subscriptions.
           realtimeAuthSetter?.(token);
-
-          // ✅ Signal auth is ready on first successful token fetch
-          if (!hasSetToken.current) {
-            hasSetToken.current = true;
-            authReadyResolve?.();
-          }
+          // ✅ Notify all listeners (realtime client etc)
+          tokenListeners.forEach((fn) => fn(token));
+          // ✅ Resolve authReady for this user
+          _authReadyResolve?.();
+          _authReadyResolve = null;
         }
       } catch {
-        // fallback to anon — subscriptions remain active
+        // fallback to anon
       }
     };
 
     setToken();
-
-    // ✅ Refresh every 50s before 60s expiry
     refreshInterval.current = setInterval(setToken, 50_000);
 
-    return () => {
-      clearInterval(refreshInterval.current);
-    };
-  }, [isLoaded, isSignedIn, getToken]);
+    return () => clearInterval(refreshInterval.current);
+  }, [isLoaded, isSignedIn, userId, getToken]);
 
   return client;
 }

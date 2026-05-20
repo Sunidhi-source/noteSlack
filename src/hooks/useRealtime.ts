@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { createClient } from "@supabase/supabase-js";
-import { useSupabaseClient, registerRealtimeAuthSetter, authReady } from "@/lib/supabase/client";
+import { useSupabaseClient, registerRealtimeAuthSetter, getAuthReady } from "@/lib/supabase/client";
 import { Message, TypingUser } from "@/types";
 
 // ✅ Stable module-level realtime client — never recreated — exported for use in other hooks
@@ -100,7 +100,7 @@ export function useMessages(channelId: string) {
     let sub: ReturnType<typeof realtimeClient.channel> | null = null;
 
     const setup = async () => {
-      await authReady;
+      await getAuthReady();
       if (cancelled) return;
 
       sub = realtimeClient
@@ -192,7 +192,7 @@ export function useMessages(channelId: string) {
     return () => {
       cancelled = true;
       // ✅ FIX: clean up after authReady so `sub` is always populated
-      authReady.then(() => {
+      getAuthReady().then(() => {
         if (sub) {
           realtimeClient.removeChannel(sub);
           sub = null;
@@ -341,7 +341,7 @@ export function useThreadMessages(parentMessageId: string | null) {
     const channelKey = `thread:${parentMessageId}:${Date.now()}`;
 
     const setup = async () => {
-      await authReady;
+      await getAuthReady();
       if (cancelled) return;
 
       channel = realtimeClient
@@ -397,7 +397,7 @@ export function useThreadMessages(parentMessageId: string | null) {
         realtimeClient.removeChannel(channel);
         channel = null;
       } else {
-        authReady.then(() => {
+        getAuthReady().then(() => {
           if (channel) {
             realtimeClient.removeChannel(channel);
             channel = null;
