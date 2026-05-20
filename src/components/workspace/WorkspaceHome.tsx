@@ -92,17 +92,19 @@ export function WorkspaceHome({ workspaceId }: Props) {
     (c) => c.name.toLowerCase() === "general" || c.name.toLowerCase() === "general-discussion"
   ) ?? channels[0];
 
-  // Load today's message count
+  // Load today's message count — scoped to this workspace's channels
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId || channels.length === 0) return;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const channelIds = channels.map((c) => c.id);
     supabase
       .from("messages")
       .select("id", { count: "exact", head: true })
+      .in("channel_id", channelIds)
       .gte("created_at", today.toISOString())
       .then(({ count }) => { if (count !== null) setTodayMsgCount(count); });
-  }, [workspaceId, supabase]);
+  }, [workspaceId, channels, supabase]);
 
   useEffect(() => {
     if (!generalChannel?.id) { setGeneralLoading(false); return; }
