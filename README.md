@@ -7,21 +7,36 @@
 <p><strong>Real-time team collaboration — Slack-style channels meets live collaborative docs.</strong><br/>
 Watch cursors move. Ship ideas faster. All in one workspace.</p>
 
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-note--slack.vercel.app-7C3AED?style=for-the-badge)](https://note-slack.vercel.app/)
+
 [![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Clerk](https://img.shields.io/badge/Clerk-6C47FF?style=flat-square&logo=clerk&logoColor=white)](https://clerk.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tiptap](https://img.shields.io/badge/Tiptap-1A1A1A?style=flat-square&logo=tiptap&logoColor=white)](https://tiptap.dev/)
+[![Vercel](https://img.shields.io/badge/Deployed_on-Vercel-000000?style=flat-square&logo=vercel&logoColor=white)](https://note-slack.vercel.app/)
 
 </div>
 
 ---
 
+## 🌐 Live Demo
+
+> **Try it now → [https://note-slack.vercel.app/](https://note-slack.vercel.app/)**
+
+Sign in with Google or create an account, spin up a workspace, invite a teammate, and start chatting + collaborating on docs — all in real time.
+
+---
+
 ## 📸 Screenshots
 
-| Landing Page | Workspace Home |
+| Landing Page | Sign In |
 |---|---|
-| ![Landing](screenshots/01-landing-page.jpeg) | ![Workspace](screenshots/02-workspace-home.jpeg) |
+| ![Landing](screenshots/01-landing-page.jpeg) | ![Sign In](screenshots/05-sign-in.jpeg) |
+
+| Workspace Home | Home Overview |
+|---|---|
+| ![Workspace Home](screenshots/02-workspace-home.jpeg) | ![Home Overview](screenshots/06-home-overview.jpeg) |
 
 | Channel Chat | Document Editor |
 |---|---|
@@ -36,6 +51,7 @@ Watch cursors move. Ship ideas faster. All in one workspace.</p>
 - Threaded replies, emoji reactions, edit & delete
 - Typing indicators — *"Alice is typing…"*
 - Unread badges per channel
+- Live chat preview directly on the workspace home
 
 ### 📄 Live Collaborative Documents
 - Rich-text editor powered by **Tiptap v3** (Bold, Italic, Lists, Code, Headings, Quotes)
@@ -48,6 +64,7 @@ Watch cursors move. Ship ideas faster. All in one workspace.</p>
 - Quick workspace switcher dropdown
 - Invite teammates by email
 - Role-based access: `owner` · `admin` · `member`
+- Activity feed, member overview, and channel list on the home dashboard
 
 ### 🔍 Global Search
 - **⌘K** search palette — instant results across messages, docs & channels
@@ -63,7 +80,7 @@ Watch cursors move. Ship ideas faster. All in one workspace.</p>
 - Real-time delivery, persisted per workspace
 
 ### 🔐 Secure Auth
-- **Clerk** authentication — sign up, sign in, social login
+- **Clerk** authentication — Google OAuth, email sign-in, sign-up
 - JWT-secured Supabase queries with Row Level Security enforced
 
 ---
@@ -73,7 +90,7 @@ Watch cursors move. Ship ideas faster. All in one workspace.</p>
 | Layer | Technology |
 |---|---|
 | Framework | Next.js 16 (App Router) |
-| Auth | Clerk |
+| Auth | Clerk (Google OAuth + Email) |
 | Database | Supabase (PostgreSQL) |
 | Realtime | Supabase Realtime |
 | CRDT Sync | Y.js + y-supabase |
@@ -81,6 +98,7 @@ Watch cursors move. Ship ideas faster. All in one workspace.</p>
 | State | Zustand |
 | Styling | Tailwind CSS v4 + CSS Variables |
 | Fonts | Syne (display) + DM Sans (body) |
+| Deployment | Vercel |
 
 ---
 
@@ -229,6 +247,8 @@ Add all env vars to your Vercel project settings, then update your Clerk webhook
 <div align="center">
 
 Built with ❤️ by [Sunidhi Sharma](https://github.com/Sunidhi-source)
+
+**[🚀 Live Demo](https://note-slack.vercel.app/) · [GitHub](https://github.com/Sunidhi-source/noteSlack)**
 
 <sub>Next.js · Supabase · Clerk · Tiptap · Y.js · Zustand · TypeScript</sub>
 
