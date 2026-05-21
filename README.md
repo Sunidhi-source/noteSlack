@@ -1,115 +1,135 @@
-# NoteSlack 🚀
+<div align="center">
 
-**A real-time collaboration platform — Notion + Slack in one app.**
+<img src="https://img.shields.io/badge/NoteSlack-Where%20Teams%20Think%20%26%20Ship-7C3AED?style=for-the-badge&logo=lightning&logoColor=white" alt="NoteSlack" />
 
-Create workspaces, chat in channels, message teammates directly, and collaborate on documents with live cursors. Built with Next.js 16, Supabase, Clerk, and Tiptap.
+<h1>⚡ NoteSlack</h1>
+
+<p><strong>Real-time team collaboration — Slack-style channels meets live collaborative docs.</strong><br/>
+Watch cursors move. Ship ideas faster. All in one workspace.</p>
+
+[![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Clerk](https://img.shields.io/badge/Clerk-6C47FF?style=flat-square&logo=clerk&logoColor=white)](https://clerk.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tiptap](https://img.shields.io/badge/Tiptap-1A1A1A?style=flat-square&logo=tiptap&logoColor=white)](https://tiptap.dev/)
+
+</div>
+
+---
+
+## 📸 Screenshots
+
+| Landing Page | Workspace Home |
+|---|---|
+| ![Landing](screenshots/01-landing-page.jpeg) | ![Workspace](screenshots/02-workspace-home.jpeg) |
+
+| Channel Chat | Document Editor |
+|---|---|
+| ![Chat](screenshots/03-channel-chat.jpeg) | ![Docs](screenshots/04-document-editor.jpeg) |
 
 ---
 
 ## ✨ Features
 
-### 💬 Chat
+### 💬 Real-Time Chat
+- Zero-lag messaging via **Supabase Realtime**
+- Threaded replies, emoji reactions, edit & delete
+- Typing indicators — *"Alice is typing…"*
+- Unread badges per channel
 
-- Real-time messaging with Supabase Realtime
-- Threaded replies (click the thread icon on any message)
-- Emoji reactions (hover a message → 😄)
-- Edit & delete your own messages
-- Typing indicators ("Alice is typing…")
-- Unread message badges per channel
-
-### 📄 Documents
-
-- Rich-text editor powered by Tiptap (Bold, Italic, Lists, Code, Headings, Quotes)
+### 📄 Live Collaborative Documents
+- Rich-text editor powered by **Tiptap v3** (Bold, Italic, Lists, Code, Headings, Quotes)
 - **Live collaborative editing** via Y.js + Supabase CRDT sync
-- **Live cursors** showing other editors' positions in real time
-- Auto-save with debounced title updates
-- Collaborator avatars in the toolbar
+- **Live cursors** showing exactly where teammates are in real time
+- Auto-save with debounced title updates + collaborator avatars in toolbar
 
 ### 🏠 Workspaces
+- Multiple workspaces with custom name & emoji icon
+- Quick workspace switcher dropdown
+- Invite teammates by email
+- Role-based access: `owner` · `admin` · `member`
 
-- Create multiple workspaces with custom name + emoji icon
-- Workspace switcher dropdown
-- Invite teammates by email (they must have an account)
-- Role-based access: `owner`, `admin`, `member`
-
-### 🔍 Search
-
-- Global ⌘K search palette
-- Searches messages, documents, and channels simultaneously
-- Keyboard navigation
+### 🔍 Global Search
+- **⌘K** search palette — instant results across messages, docs & channels
+- Full keyboard navigation
 
 ### 🔔 Notifications
-
 - Live bell icon with unread badge
 - Mark individual or all notifications as read
-- Click to navigate to the relevant resource
+- Click-to-navigate to the relevant resource
 
 ### 💌 Direct Messages
+- 1-on-1 DMs with any workspace member
+- Real-time delivery, persisted per workspace
 
-- 1-on-1 messaging with any workspace member
-- Real-time delivery via Supabase Realtime
-- Conversation persisted per workspace
-
-### 🔐 Auth
-
-- Clerk authentication (sign up / sign in / social)
-- JWT-secured Supabase queries (RLS enforced)
-- User profile synced to Supabase via Clerk webhook
+### 🔐 Secure Auth
+- **Clerk** authentication — sign up, sign in, social login
+- JWT-secured Supabase queries with Row Level Security enforced
 
 ---
 
 ## 🛠 Tech Stack
 
-| Layer     | Technology                      |
-| --------- | ------------------------------- |
-| Framework | Next.js 16 (App Router)         |
-| Auth      | Clerk                           |
-| Database  | Supabase (PostgreSQL)           |
-| Realtime  | Supabase Realtime               |
-| CRDT sync | Y.js + y-supabase               |
-| Editor    | Tiptap v3                       |
-| State     | Zustand                         |
-| Styling   | CSS Variables + Inline Styles   |
-| Fonts     | Syne (display) + DM Sans (body) |
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Auth | Clerk |
+| Database | Supabase (PostgreSQL) |
+| Realtime | Supabase Realtime |
+| CRDT Sync | Y.js + y-supabase |
+| Editor | Tiptap v3 |
+| State | Zustand |
+| Styling | Tailwind CSS v4 + CSS Variables |
+| Fonts | Syne (display) + DM Sans (body) |
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Clone & install
+### 1. Clone & Install
 
 ```bash
 git clone https://github.com/Sunidhi-source/noteSlack
-cd noteslack
+cd noteSlack
 npm install
 ```
 
-### 2. Set up Clerk
+### 2. Set Up Clerk
 
-1. Go to [dashboard.clerk.com](https://dashboard.clerk.com) and create an app
+1. Create an app at [dashboard.clerk.com](https://dashboard.clerk.com)
 2. Copy your **Publishable Key** and **Secret Key**
-3. In Clerk → Webhooks, create a webhook pointing to `https://your-domain.com/api/webhooks/clerk`
+3. In **Clerk → Webhooks**, create a webhook pointing to `https://your-domain.com/api/webhooks/clerk`
    - Enable events: `user.created`, `user.updated`, `user.deleted`
    - Copy the **Signing Secret**
 
-### 3. Set up Supabase
+### 3. Set Up Supabase
 
-1. Go to [supabase.com](https://supabase.com) and create a project
+1. Create a project at [supabase.com](https://supabase.com)
 2. In **SQL Editor**, paste and run the full contents of `supabase/schema.sql`
 3. Copy your **Project URL**, **anon key**, and **service_role key**
-4. In Supabase → Auth → JWT Settings, add a Clerk JWT template:
+4. In **Supabase → Auth → JWT Settings**, add a Clerk JWT template:
    - Template name: `supabase`
    - Claims: `{ "sub": "{{user.id}}" }`
-   - (Follow [Clerk's Supabase guide](https://clerk.com/docs/integrations/databases/supabase))
+   - Follow [Clerk's Supabase integration guide](https://clerk.com/docs/integrations/databases/supabase)
 
-### 4. Configure environment
+### 4. Configure Environment
 
 ```bash
 cp .env.example .env.local
 # Fill in all values from steps 2 & 3
 ```
 
-### 5. Run locally
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role (server only) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
+| `CLERK_SECRET_KEY` | Clerk secret key |
+| `CLERK_WEBHOOK_SECRET` | Clerk webhook signing secret |
+| `GEMINI_API_KEY` | AI writing assistant (free at [aistudio.google.com](https://aistudio.google.com)) |
+
+### 5. Run Locally
 
 ```bash
 npm run dev
@@ -123,105 +143,93 @@ npm run dev
 ```
 src/
 ├── app/
-│   ├── (auth)/              # Sign in / sign up pages (Clerk)
-│   ├── (dashboard)/
-│   │   └── workspace/
-│   │       └── [workspaceId]/
-│   │           ├── page.tsx           # Workspace home (activity feed)
-│   │           ├── channel/[id]/      # Chat view
-│   │           ├── docs/[id]/         # Document editor
-│   │           └── dm/[userId]/       # Direct messages
+│   ├── (auth)/                    # Sign in / sign up (Clerk)
+│   ├── (dashboard)/workspace/[id]/
+│   │   ├── page.tsx               # Workspace home — activity feed
+│   │   ├── channel/[id]/          # Chat view
+│   │   ├── docs/[id]/             # Document editor
+│   │   └── dm/[userId]/           # Direct messages
 │   └── api/
-│       ├── workspaces/      # ✅ Workspace CRUD (POST creates workspace)
-│       ├── workspace/
-│       │   └── invite/      # Invite teammates
-│       ├── channels/        # Channel creation
-│       ├── documents/       # Document CRUD
-│       ├── search/          # Global search
-│       ├── notifications/   # Read/unread notifications
-│       ├── dm/              # DM conversation management
-│       └── webhooks/clerk/  # Clerk → Supabase user sync
+│       ├── workspaces/            # Workspace CRUD
+│       ├── workspace/invite/      # Invite teammates
+│       ├── channels/              # Channel management
+│       ├── documents/             # Document CRUD
+│       ├── search/                # Global search
+│       ├── notifications/         # Notification read/unread
+│       ├── dm/                    # DM conversations
+│       └── webhooks/clerk/        # Clerk → Supabase user sync
 │
 ├── components/
-│   ├── chat/ChatView.tsx         # Full-featured channel chat
-│   ├── editor/DocumentView.tsx   # Collaborative Tiptap editor
-│   ├── sidebar/
-│   │   ├── Sidebar.tsx           # Nav: channels, DMs, docs
-│   │   ├── WorkspaceSwitcher.tsx # Switch between workspaces
-│   │   ├── CreateWorkspaceModal.tsx
-│   │   ├── CreateChannelModal.tsx
-│   │   ├── CreateDocModal.tsx
-│   │   └── InviteMemberModal.tsx
-│   ├── ui/
-│   │   ├── SearchModal.tsx       # ⌘K global search
-│   │   └── NotificationBell.tsx  # Live notification bell
-│   └── workspace/WorkspaceHome.tsx # Activity feed + quick actions
+│   ├── chat/ChatView.tsx          # Full-featured channel chat
+│   ├── editor/DocumentView.tsx    # Collaborative Tiptap editor
+│   ├── sidebar/                   # Nav, workspace switcher, modals
+│   ├── ui/                        # SearchModal, NotificationBell
+│   └── workspace/WorkspaceHome.tsx
 │
 ├── hooks/
-│   ├── useWorkspace.ts      # Fetch workspace data + live subscriptions
-│   ├── useRealtime.ts       # useMessages, useTypingIndicator, useThreadMessages
-│   ├── usePresence.ts       # Live cursors for documents
-│   ├── useReactions.ts      # Emoji reaction toggle
-│   ├── useSearch.ts         # Debounced global search
-│   └── useDmMessages.ts     # DM realtime messages
+│   ├── useWorkspace.ts            # Data + live subscriptions
+│   ├── useRealtime.ts             # Messages, typing, threads
+│   ├── usePresence.ts             # Live cursors
+│   ├── useReactions.ts            # Emoji reactions
+│   ├── useSearch.ts               # Debounced global search
+│   └── useDmMessages.ts           # DM realtime
 │
-├── store/workspace.ts       # Zustand: channels, docs, members, notifs, unread
-├── types/index.ts           # Full TypeScript types
+├── store/workspace.ts             # Zustand global state
+├── types/index.ts                 # Full TypeScript types
 └── lib/
-    ├── utils.ts             # getInitials, generateUserColor, formatRelativeTime
+    ├── utils.ts                   # Helpers
     └── supabase/
-        ├── client.ts        # Clerk-authenticated Supabase client
-        └── server.ts        # Server-side Supabase client (service role)
+        ├── client.ts              # Clerk-authenticated client
+        └── server.ts              # Service-role server client
 
 supabase/
-└── schema.sql               # Full DB schema: tables, RLS, triggers, indexes
+└── schema.sql                     # Full DB schema: tables, RLS, triggers, indexes
 ```
-
----
-
-## 🐛 Bug Fixes in This Version
-
-| Bug                                                       | Fix                                                                                                                              |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace creation silently failed                        | `CreateWorkspaceModal` was calling `/api/workspace` (singular) but the route is `/api/workspaces` (plural). Fixed the fetch URL. |
-| No error feedback on workspace creation                   | Added error state + UI error message display                                                                                     |
-| Slug collision crashes insert                             | Added slug uniqueness check with timestamp fallback                                                                              |
-| Webhook handler missing `user.deleted`                    | Added delete handler to clean up Supabase users table                                                                            |
-| `useWorkspaceStore` missing `members` and `notifications` | Expanded store with all required state slices                                                                                    |
-| Members not fetched in `useWorkspace`                     | Added members + notifications fetch with live subscriptions                                                                      |
 
 ---
 
 ## 🚢 Deployment
 
-### Vercel (recommended)
+### Vercel (Recommended)
 
 ```bash
-npm run build  # verify no TypeScript errors first
+npm run build   # verify no TypeScript errors
 vercel deploy
 ```
 
-Add all env vars to your Vercel project settings. Update your Clerk webhook URL to your production domain.
+Add all env vars to your Vercel project settings, then update your Clerk webhook URL to your production domain.
 
-Required env vars:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-- `CLERK_SECRET_KEY`
-- `CLERK_WEBHOOK_SECRET`
-- `GEMINI_API_KEY` (for AI writing assistant — free at aistudio.google.com)
-
-### Supabase Realtime
-
-Ensure the tables `messages`, `reactions`, `notifications`, `dm_messages`, and `channel_read_state` are added to the `supabase_realtime` publication (the schema.sql does this automatically).
+> **Tip:** Ensure tables `messages`, `reactions`, `notifications`, `dm_messages`, and `channel_read_state` are added to the `supabase_realtime` publication. The `schema.sql` handles this automatically.
 
 ---
 
-## 📋 Supabase Checklist
+## ✅ Pre-Deploy Checklist
 
 - [ ] Run `supabase/schema.sql` in SQL Editor
-- [ ] Enable Row Level Security on all tables ✅ (done in schema)
-- [ ] Add JWT template for Clerk in Supabase Auth settings
-- [ ] Enable Realtime for `messages`, `reactions`, `notifications`, `dm_messages`
-- [ ] Set `SUPABASE_SERVICE_ROLE_KEY` in server env (not exposed to client)
+- [ ] Row Level Security enabled on all tables *(done in schema)*
+- [ ] JWT template for Clerk added in Supabase Auth settings
+- [ ] Realtime enabled for `messages`, `reactions`, `notifications`, `dm_messages`
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` set in server env *(never exposed to client)*
+
+---
+
+## 🐛 Notable Bug Fixes
+
+| Bug | Fix |
+|---|---|
+| Workspace creation silently failed | Fixed fetch URL: `/api/workspace` → `/api/workspaces` |
+| No error feedback on creation | Added error state + UI error message display |
+| Slug collision crashes insert | Added uniqueness check with timestamp fallback |
+| Webhook missing `user.deleted` | Added delete handler for Supabase user cleanup |
+| `useWorkspaceStore` missing slices | Expanded with `members` and `notifications` state |
+| Members not fetched in `useWorkspace` | Added members + notifications fetch with live subs |
+
+---
+
+<div align="center">
+
+Built with ❤️ by [Sunidhi Sharma](https://github.com/Sunidhi-source)
+
+<sub>Next.js · Supabase · Clerk · Tiptap · Y.js · Zustand · TypeScript</sub>
+
+</div>
