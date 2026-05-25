@@ -15,6 +15,7 @@ export function WorkspaceSwitcher() {
   const [showCreate, setShowCreate] = useState(false);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -42,7 +43,11 @@ export function WorkspaceSwitcher() {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const clickedButton = buttonRef.current?.contains(target);
+      const clickedDropdown = dropdownRef.current?.contains(target);
+
+      if (!clickedButton && !clickedDropdown) {
         setOpen(false);
       }
     };
@@ -117,18 +122,21 @@ export function WorkspaceSwitcher() {
           />
 
           {/* Dropdown — positioned exactly below the button */}
-          <div style={{
-            position: "fixed",
-            top: dropdownPos.top,
-            left: dropdownPos.left,
-            width: dropdownPos.width,
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border-accent)",
-            borderRadius: "var(--radius-md)",
-            boxShadow: "0 16px 40px rgba(0,0,0,0.6)",
-            zIndex: 9999,
-            overflow: "hidden",
-          }}>
+          <div
+            ref={dropdownRef}
+            style={{
+              position: "fixed",
+              top: dropdownPos.top,
+              left: dropdownPos.left,
+              width: dropdownPos.width,
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-accent)",
+              borderRadius: "var(--radius-md)",
+              boxShadow: "0 16px 40px rgba(0,0,0,0.6)",
+              zIndex: 9999,
+              overflow: "hidden",
+            }}
+          >
             {workspaces.map((ws) => (
               <button
                 key={ws.id}

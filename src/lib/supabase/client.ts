@@ -113,7 +113,7 @@ export function useSupabaseClient(): SupabaseClient {
     };
 
     setToken();
-    refreshInterval.current = setInterval(setToken, 50_000);
+    refreshInterval.current = setInterval(setToken, 20_000);
 
     return () => clearInterval(refreshInterval.current);
   }, [isLoaded, isSignedIn, userId, getToken]);

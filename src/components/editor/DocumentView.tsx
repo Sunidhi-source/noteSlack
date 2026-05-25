@@ -14,8 +14,10 @@ import {
   FileText,
   RotateCw,
   Save,
+  Sparkles,
 } from "lucide-react";
 
+import { AIDocumentAssistant } from "@/components/editor/AIDocumentAssistant";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -46,11 +48,13 @@ function DocumentEditor({
   remoteContent,
   onChange,
   onEditorReady,
+  onSelectionTextChange,
 }: {
   initialContent: JSONContent;
   remoteContent: { content: JSONContent; version: number } | null;
   onChange: (content: JSONContent, options?: { broadcast?: boolean }) => void;
   onEditorReady: (editor: Editor | null) => void;
+  onSelectionTextChange: (text: string) => void;
 }) {
   const editor = useEditor(
     {
@@ -70,6 +74,11 @@ function DocumentEditor({
       },
       onUpdate: ({ editor }) => {
         onChange(editor.getJSON());
+      },
+      onSelectionUpdate: ({ editor }) => {
+        const { from, to } = editor.state.selection;
+        const selectedText = editor.state.doc.textBetween(from, to, " ");
+        onSelectionTextChange(selectedText.trim());
       },
     },
     [],
@@ -116,6 +125,8 @@ export function DocumentView({ workspaceId, docId }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [showAI, setShowAI] = useState(false);
+  const [selectedText, setSelectedText] = useState("");
 
   const titleChannelRef = useRef<RealtimeChannel | null>(null);
   const contentChannelRef = useRef<RealtimeChannel | null>(null);
@@ -397,6 +408,16 @@ export function DocumentView({ workspaceId, docId }: Props) {
     editorRef.current = editor;
   }, []);
 
+  const handleInsertAIResult = useCallback((text: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    editor.chain().focus().insertContent(text).run();
+    contentRef.current = editor.getJSON();
+    setEditorContent(contentRef.current);
+    handleContentChange(contentRef.current);
+  }, [handleContentChange]);
+
   useEffect(() => {
     return () => {
       if (saveTimer.current) {
@@ -521,6 +542,29 @@ export function DocumentView({ workspaceId, docId }: Props) {
         >
           <button
             type="button"
+            onClick={() => setShowAI(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              border: "1px solid rgba(139,92,246,0.3)",
+              background: "var(--accent-soft)",
+              color: "var(--accent)",
+              borderRadius: 9,
+              padding: "7px 14px",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "var(--font-display)",
+              transition: "all 0.15s",
+            }}
+          >
+            <Sparkles size={14} />
+            AI Assist
+          </button>
+
+          <button
+            type="button"
             onClick={handleSaveDocument}
             disabled={saving}
             style={{
@@ -641,9 +685,18 @@ export function DocumentView({ workspaceId, docId }: Props) {
             remoteContent={remoteContent}
             onChange={handleContentChange}
             onEditorReady={handleEditorReady}
+            onSelectionTextChange={setSelectedText}
           />
         </div>
       </div>
+
+      {showAI && (
+        <AIDocumentAssistant
+          selectedText={selectedText}
+          onInsert={handleInsertAIResult}
+          onClose={() => setShowAI(false)}
+        />
+      )}
     </div>
   );
 }
