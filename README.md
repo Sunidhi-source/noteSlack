@@ -246,7 +246,7 @@ Add all env vars to your Vercel project settings, then update your Clerk webhook
 
 <div align="center">
 
-Built with ❤️ by [Sunidhi Sharma](https://github.com/Sunidhi-source)
+
 
 **[🚀 Live Demo](https://note-slack.vercel.app/) · [GitHub](https://github.com/Sunidhi-source/noteSlack)**
 
