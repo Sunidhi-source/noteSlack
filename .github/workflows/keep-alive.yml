@@ -1,0 +1,29 @@
+# .github/workflows/keep-alive.yml
+#
+# Pings the deployed app's /api/keep-alive route on a schedule so the
+# Supabase free-tier project never goes 7 days without database
+# activity and gets auto-paused.
+#
+# Runs every Sunday and Wednesday at 00:00 UTC — twice a week gives a
+# safe buffer even if one run is skipped or fails.
+
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    - cron: "0 0 * * 0,3"
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab to test
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping keep-alive endpoint
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.KEEP_ALIVE_URL }}")
+          echo "Response code: $response"
+          if [ "$response" -ne 200 ]; then
+            echo "Keep-alive ping failed with status $response"
+            exit 1
+          fi
+          echo "Keep-alive ping succeeded"
